@@ -1,0 +1,16 @@
+{
+  "name": "text-changer",
+  "version": "1.0.0",
+  "description": "Figma plugin to change text",
+  "main": "code.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "author": "",
+  "license": "",
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.47.0",
+    "typescript": "^4.9.5"
+  }
+}

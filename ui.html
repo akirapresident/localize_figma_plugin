@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      font-family: Inter, sans-serif;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      background-color: #18A0FB;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:hover {
+      background-color: #0D8DE3;
+    }
+    .status {
+      font-size: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      display: none;
+    }
+    .status.error {
+      background: #FEE2E2;
+      color: #DC2626;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="input-group">
+      <label for="apiKey">OpenAI API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-..." />
+    </div>
+    <div id="status" class="status"></div>
+    <button id="translate">Translate to Portuguese-BR</button>
+  </div>
+
+  <script>
+    document.getElementById('translate').onclick = () => {
+      const apiKey = document.getElementById('apiKey').value;
+      const status = document.getElementById('status');
+      
+      if (!apiKey || !apiKey.startsWith('sk-')) {
+        status.textContent = 'Please enter a valid OpenAI API key';
+        status.className = 'status error';
+        return;
+      }
+
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'translate',
+          apiKey: apiKey
+        } 
+      }, '*');
+    };
+  </script>
+</body>
+</html> 
