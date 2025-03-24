@@ -1,0 +1,1 @@
+# localize_figma_plugin
