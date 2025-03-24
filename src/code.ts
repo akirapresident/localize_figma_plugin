@@ -1,3 +1,19 @@
+// Define languages directly in the file for now
+const languages = [
+  { name: "Portuguese (Brazil)", code: "pt-BR" },
+  { name: "English", code: "en" },
+  { name: "Spanish", code: "es" },
+  { name: "French", code: "fr" },
+  { name: "German", code: "de" },
+  { name: "Italian", code: "it" },
+  { name: "Japanese", code: "ja" },
+  { name: "Korean", code: "ko" },
+  { name: "Chinese (Simplified)", code: "zh-CN" },
+  { name: "Chinese (Traditional)", code: "zh-TW" },
+  { name: "Russian", code: "ru" },
+  { name: "Arabic", code: "ar" }
+];
+
 // Add these types at the top of the file
 type TranslationResponse = {
   choices: {
@@ -7,7 +23,7 @@ type TranslationResponse = {
   }[];
 };
 
-async function translateText(text: string, apiKey: string): Promise<string> {
+async function translateText(text: string, apiKey: string, targetLang: string): Promise<string> {
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -20,7 +36,7 @@ async function translateText(text: string, apiKey: string): Promise<string> {
         messages: [
           {
             role: "system",
-            content: "You are a translator. Translate the following text to Portuguese-BR. Only respond with the translation, no explanations."
+            content: `You are a translator. Translate the following text to ${targetLang}. Only respond with the translation, no explanations.`
           },
           {
             role: "user",
@@ -44,7 +60,7 @@ async function translateText(text: string, apiKey: string): Promise<string> {
   }
 }
 
-async function translateTextNodes(apiKey: string) {
+async function translateTextNodes(apiKey: string, targetLang: string) {
   if (figma.currentPage.selection.length === 0) {
     figma.notify('Please select a frame first');
     return;
@@ -93,7 +109,7 @@ async function translateTextNodes(apiKey: string) {
 
       // Translate the text
       const originalText = textNode.characters;
-      const translatedText = await translateText(originalText, apiKey);
+      const translatedText = await translateText(originalText, apiKey, targetLang);
       
       // Update the text node
       textNode.characters = translatedText;
@@ -108,13 +124,13 @@ async function translateTextNodes(apiKey: string) {
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 200 });
+figma.showUI(__html__, { width: 400, height: 250 });
 
 // Handle messages from the UI
 figma.ui.onmessage = async msg => {
   if (msg.type === 'translate') {
     try {
-      await translateTextNodes(msg.apiKey);
+      await translateTextNodes(msg.apiKey, msg.targetLang);
       figma.closePlugin();
     } catch (error: any) {
       figma.notify('Translation failed: ' + error.message);
