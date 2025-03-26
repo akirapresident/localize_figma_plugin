@@ -281,7 +281,7 @@
     const langError = document.getElementById('langError');
 
     function updateButtonState() {
-      const apiKey = apiKeyInput.value;
+      const apiKey = apiKeyInput.value.trim();
       const selectedLangs = Array.from(targetLangSelect.selectedOptions).map(option => option.value);
       
       // Reset errors
@@ -289,7 +289,18 @@
       langError.textContent = '';
       
       // Enable button if API key is valid and at least one language is selected
-      translateBtn.disabled = !(apiKey.startsWith('sk-') && selectedLangs.length > 0);
+      const isValidApiKey = apiKey.length > 0 && apiKey.startsWith('sk-');
+      const hasSelectedLanguages = selectedLangs.length > 0;
+      
+      translateBtn.disabled = !(isValidApiKey && hasSelectedLanguages);
+      
+      // Show error messages if needed
+      if (!isValidApiKey && apiKey.length > 0) {
+        apiKeyError.textContent = 'Please enter a valid OpenAI API key';
+      }
+      if (!hasSelectedLanguages) {
+        langError.textContent = 'Please select at least one language';
+      }
     }
 
     // Add event listeners
