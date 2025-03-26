@@ -60,7 +60,7 @@ async function translateText(text: string, apiKey: string, targetLang: string): 
   }
 }
 
-async function translateTextNodes(apiKey: string, targetLang: string) {
+async function translateTextNodes(apiKey: string, targetLangs: string[]) {
   if (figma.currentPage.selection.length === 0) {
     figma.notify('Please select a frame first');
     return;
@@ -73,64 +73,83 @@ async function translateTextNodes(apiKey: string, targetLang: string) {
     return;
   }
 
-  const textNodes: TextNode[] = [];
-  
-  function findAllTextNodes(node: SceneNode) {
-    if (node.type === 'TEXT') {
-      textNodes.push(node);
-    } else if ('children' in node) {
-      for (const child of node.children) {
-        findAllTextNodes(child);
+  // Keep track of the last positioned frame
+  let lastPositionedFrame = selectedNode;
+
+  // Create a copy for each selected language
+  for (const targetLang of targetLangs) {
+    // Duplicate the frame
+    const duplicatedNode = selectedNode.clone();
+    
+    // Position the duplicated frame below the last positioned frame
+    duplicatedNode.y = lastPositionedFrame.y + lastPositionedFrame.height + 50; // 50px gap between frames
+    
+    // Update the name of the duplicated frame
+    const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
+    duplicatedNode.name = `[${languageName.toUpperCase()}] ${selectedNode.name}`;
+
+    // Update the last positioned frame for the next iteration
+    lastPositionedFrame = duplicatedNode;
+
+    const textNodes: TextNode[] = [];
+    
+    function findAllTextNodes(node: SceneNode) {
+      if (node.type === 'TEXT') {
+        textNodes.push(node);
+      } else if ('children' in node) {
+        for (const child of node.children) {
+          findAllTextNodes(child);
+        }
+      }
+    }
+    
+    findAllTextNodes(duplicatedNode);
+    
+    if (textNodes.length === 0) {
+      figma.notify('No text nodes found in the selected frame');
+      continue;
+    }
+
+    figma.notify(`Translating to ${languageName}...`);
+    
+    for (const textNode of textNodes) {
+      try {
+        console.log(`Processing: "${textNode.characters}"`);
+
+        if (textNode.hasMissingFont) {
+          console.log(`Skipping "${textNode.characters}" - missing font`);
+          continue;
+        }
+
+        // Load fonts before modifying text
+        const fontNames = textNode.getRangeAllFontNames(0, textNode.characters.length);
+        await Promise.all(fontNames.map(figma.loadFontAsync));
+
+        // Translate the text
+        const originalText = textNode.characters;
+        const translatedText = await translateText(originalText, apiKey, targetLang);
+        
+        // Update the text node
+        textNode.characters = translatedText;
+        console.log(`Translated: "${originalText}" → "${translatedText}"`);
+        
+      } catch (error) {
+        console.error(`Error processing "${textNode.characters}":`, error);
       }
     }
   }
-  
-  findAllTextNodes(selectedNode);
-  
-  if (textNodes.length === 0) {
-    figma.notify('No text nodes found in the selected frame');
-    return;
-  }
 
-  figma.notify(`Found ${textNodes.length} text nodes. Starting translation...`);
-  
-  for (const textNode of textNodes) {
-    try {
-      console.log(`Processing: "${textNode.characters}"`);
-
-      if (textNode.hasMissingFont) {
-        console.log(`Skipping "${textNode.characters}" - missing font`);
-        continue;
-      }
-
-      // Load fonts before modifying text
-      const fontNames = textNode.getRangeAllFontNames(0, textNode.characters.length);
-      await Promise.all(fontNames.map(figma.loadFontAsync));
-
-      // Translate the text
-      const originalText = textNode.characters;
-      const translatedText = await translateText(originalText, apiKey, targetLang);
-      
-      // Update the text node
-      textNode.characters = translatedText;
-      console.log(`Translated: "${originalText}" → "${translatedText}"`);
-      
-    } catch (error) {
-      console.error(`Error processing "${textNode.characters}":`, error);
-    }
-  }
-
-  figma.notify('Translation completed!');
+  figma.notify('All translations completed!');
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 250 });
+figma.showUI(__html__, { width: 400, height: 608 });
 
 // Handle messages from the UI
 figma.ui.onmessage = async msg => {
   if (msg.type === 'translate') {
     try {
-      await translateTextNodes(msg.apiKey, msg.targetLang);
+      await translateTextNodes(msg.apiKey, msg.targetLangs);
       figma.closePlugin();
     } catch (error: any) {
       figma.notify('Translation failed: ' + error.message);
