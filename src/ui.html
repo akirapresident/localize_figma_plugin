@@ -249,12 +249,17 @@
     <button id="resetBtn" class="button" style="background-color: #FF3B30;">
       Reset Free Credits
     </button>
+
+    <button id="resetSubscriptionBtn" class="button" style="background-color: #FF9500;">
+      Reset Subscription
+    </button>
   </div>
 
   <script>
     const targetLangSelect = document.getElementById('targetLang');
     const translateBtn = document.getElementById('translateBtn');
     const resetBtn = document.getElementById('resetBtn');
+    const resetSubscriptionBtn = document.getElementById('resetSubscriptionBtn');
     const langError = document.getElementById('langError');
     const langCounter = document.getElementById('langCounter');
 
@@ -324,6 +329,15 @@
       parent.postMessage({ 
         pluginMessage: { 
           type: 'reset'
+        }
+      }, '*');
+    };
+
+    resetSubscriptionBtn.onclick = () => {
+      // Send message to plugin code to reset subscription
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'resetSubscription'
         }
       }, '*');
     };

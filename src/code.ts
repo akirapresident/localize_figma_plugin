@@ -145,9 +145,10 @@ figma.ui.onmessage = async (msg) => {
     // Check payment status and frame count
     if (figma.payments) {
       const paymentStatus = figma.payments.status;
+      const isTestMode = await figma.clientStorage.getAsync('testMode') || false;
 
       // If user hasn't paid and has reached the free limit
-      if (paymentStatus.type === 'UNPAID' && translatedFramesCount >= FREE_FRAMES_LIMIT) {
+      if ((paymentStatus.type === 'UNPAID' || isTestMode) && translatedFramesCount >= FREE_FRAMES_LIMIT) {
         // Show payment UI
         await figma.payments.initiateCheckoutAsync({
           interstitial: 'TRIAL_ENDED'
@@ -269,5 +270,9 @@ figma.ui.onmessage = async (msg) => {
     // Reset the translated frames count
     await figma.clientStorage.setAsync('translatedFramesCount', 0);
     figma.notify('Free credits have been reset!');
+  } else if (msg.type === 'resetSubscription') {
+    // Reset the subscription status for testing
+    await figma.clientStorage.setAsync('testMode', true);
+    figma.notify('Subscription has been reset! (Test Mode)');
   }
 };
