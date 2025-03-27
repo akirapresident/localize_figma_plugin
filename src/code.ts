@@ -78,45 +78,43 @@ async function translateText(text: string, targetLang: string): Promise<string> 
   }
 }
 
-// Show the UI
-figma.showUI(__html__, { width: 400, height: 600 });
-
-// Function to count text nodes in a frame
-function countTextNodes(node: SceneNode): number {
-  let count = 0;
-  if (node.type === 'TEXT') {
-    count++;
-  } else if ('children' in node) {
-    for (const child of node.children) {
-      count += countTextNodes(child);
-    }
-  }
-  return count;
-}
-
-// Function to update text count in UI
-async function updateTextCount() {
-  const selectedNodes = figma.currentPage.selection;
-  const selectedFrames = selectedNodes.filter((node): node is FrameNode => node.type === 'FRAME');
-  
-  let totalTextNodes = 0;
-  for (const frame of selectedFrames) {
-    totalTextNodes += countTextNodes(frame);
-  }
-  
-  figma.ui.postMessage({ 
-    type: 'updateTextCount',
-    count: totalTextNodes
+// Function to update credits display in UI
+async function updateCreditsDisplay() {
+  const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
+  const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
+  figma.ui.postMessage({
+    type: 'updateCredits',
+    remainingCredits
   });
 }
 
-// Initial count for any pre-selected frames
+// Show the UI
+figma.showUI(__html__, { width: 400, height: 500 });
+
+// Initial check for selected frames and credits
 updateTextCount();
+updateCreditsDisplay();
 
 // Listen for selection changes
 figma.on('selectionchange', () => {
   updateTextCount();
 });
+
+function updateTextCount() {
+  const selectedNodes = figma.currentPage.selection;
+  const selectedFrames = selectedNodes.filter((node): node is FrameNode => node.type === 'FRAME');
+  let textNodeCount = 0;
+
+  for (const frame of selectedFrames) {
+    const textNodes = frame.findAll(node => node.type === 'TEXT');
+    textNodeCount += textNodes.length;
+  }
+
+  figma.ui.postMessage({
+    type: 'updateTextCount',
+    count: textNodeCount
+  });
+}
 
 // Handle messages from the UI
 figma.ui.onmessage = async (msg) => {
@@ -258,8 +256,9 @@ figma.ui.onmessage = async (msg) => {
       }
     }
 
-    // Update translated frames count
+    // Update translated frames count and credits display
     await figma.clientStorage.setAsync('translatedFramesCount', translatedFramesCount + selectedFrames.length);
+    updateCreditsDisplay();
 
     if (!hasErrors) {
       figma.notify('Translation completed successfully!');
@@ -269,10 +268,27 @@ figma.ui.onmessage = async (msg) => {
   } else if (msg.type === 'reset') {
     // Reset the translated frames count
     await figma.clientStorage.setAsync('translatedFramesCount', 0);
+    updateCreditsDisplay();
     figma.notify('Free credits have been reset!');
   } else if (msg.type === 'resetSubscription') {
     // Reset the subscription status for testing
     await figma.clientStorage.setAsync('testMode', true);
     figma.notify('Subscription has been reset! (Test Mode)');
+  } else if (msg.type === 'getCreditsCount') {
+    updateCreditsDisplay();
+  } else if (msg.type === 'subscribe') {
+    if (figma.payments) {
+      // Show payment UI
+      await figma.payments.initiateCheckoutAsync({
+        interstitial: 'TRIAL_ENDED'
+      });
+
+      // Check if user completed payment
+      if (figma.payments.status.type === 'PAID') {
+        figma.notify('Thank you for subscribing!');
+        // Reset test mode if it was set
+        await figma.clientStorage.setAsync('testMode', false);
+      }
+    }
   }
 };

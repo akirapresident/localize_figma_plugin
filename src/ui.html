@@ -93,6 +93,18 @@
       cursor: not-allowed;
     }
 
+    .button.subscribe {
+      background-color: #000000;
+    }
+
+    .button.subscribe:hover {
+      background-color: #333333;
+    }
+
+    .button.subscribe:active {
+      background-color: #000000;
+    }
+
     .error {
       color: var(--figma-color-text-danger);
       font-size: 12px;
@@ -125,6 +137,23 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+    }
+
+    .credits-counter {
+      font-size: 12px;
+      color: var(--figma-color-text);
+      background: var(--figma-color-bg-secondary);
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .credits-counter span {
+      color: #007AFF;
+      font-weight: 500;
     }
 
     .help-link {
@@ -242,6 +271,10 @@
       <div class="help-text" id="langCounter">0 languages selected</div>
     </div>
 
+    <div class="credits-counter" id="creditsCounter">
+      Free credits remaining: <span>2</span>
+    </div>
+
     <button id="translateBtn" class="button" disabled>
       Translate Selected Frame
     </button>
@@ -262,6 +295,18 @@
     const resetSubscriptionBtn = document.getElementById('resetSubscriptionBtn');
     const langError = document.getElementById('langError');
     const langCounter = document.getElementById('langCounter');
+    const creditsCounter = document.getElementById('creditsCounter');
+    const creditsSpan = creditsCounter.querySelector('span');
+
+    let currentTextCount = 0;
+    let remainingCredits = 2; // Default value
+
+    // Request initial credits count
+    parent.postMessage({ 
+      pluginMessage: { 
+        type: 'getCreditsCount'
+      }
+    }, '*');
 
     // Handle messages from the plugin code
     window.onmessage = (event) => {
@@ -269,10 +314,16 @@
       
       if (msg.type === 'done') {
         translateBtn.disabled = false;
-        translateBtn.textContent = 'Translate Selected Frame';
+        updateButtonState();
       } else if (msg.type === 'updateTextCount') {
         const { count } = msg;
-        translateBtn.textContent = `Translate ${count} Text Node${count !== 1 ? 's' : ''}`;
+        currentTextCount = count;
+        updateButtonState();
+      } else if (msg.type === 'updateCredits') {
+        const { remainingCredits: newCredits } = msg;
+        remainingCredits = newCredits;
+        creditsSpan.textContent = newCredits;
+        updateButtonState();
       }
     };
 
@@ -285,14 +336,27 @@
       // Enable button if at least one language is selected
       const hasSelectedLanguages = selectedLangs.length > 0;
       
-      translateBtn.disabled = !hasSelectedLanguages;
-      
       // Update language counter
       langCounter.textContent = `${selectedLangs.length} language${selectedLangs.length !== 1 ? 's' : ''} selected`;
       
-      // Show error messages if needed
-      if (!hasSelectedLanguages) {
-        langError.textContent = 'Please select at least one language';
+      // Update button state based on credits, language and frame selection
+      if (remainingCredits === 0) {
+        translateBtn.textContent = 'Subscribe Now!';
+        translateBtn.disabled = false;
+        translateBtn.classList.add('subscribe');
+      } else {
+        translateBtn.classList.remove('subscribe');
+        if (!hasSelectedLanguages) {
+          translateBtn.textContent = 'Select languages';
+          translateBtn.disabled = true;
+          langError.textContent = 'Please select at least one language';
+        } else if (currentTextCount === 0) {
+          translateBtn.textContent = 'Select frame(s) to translate';
+          translateBtn.disabled = true;
+        } else {
+          translateBtn.textContent = `Translate ${currentTextCount} Text Node${currentTextCount !== 1 ? 's' : ''}`;
+          translateBtn.disabled = false;
+        }
       }
     }
 
@@ -301,6 +365,17 @@
 
     translateBtn.onclick = () => {
       const selectedLangs = Array.from(targetLangSelect.selectedOptions).map(option => option.value);
+      const remainingCredits = parseInt(creditsSpan.textContent);
+      
+      // If no credits, initiate subscription
+      if (remainingCredits === 0) {
+        parent.postMessage({ 
+          pluginMessage: { 
+            type: 'subscribe'
+          }
+        }, '*');
+        return;
+      }
       
       // Reset errors
       langError.textContent = '';
@@ -308,6 +383,12 @@
       // Validate language selection
       if (selectedLangs.length === 0) {
         langError.textContent = 'Please select at least one language';
+        return;
+      }
+      
+      // Validate frame selection
+      if (currentTextCount === 0) {
+        translateBtn.textContent = 'Select frame(s) to translate';
         return;
       }
       
