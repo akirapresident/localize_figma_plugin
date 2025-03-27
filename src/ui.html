@@ -120,6 +120,7 @@
       font-size: 11px;
       color: var(--figma-color-text-secondary);
       margin-top: 2px;
+      margin-bottom: 8px;
       line-height: 1.2;
       display: flex;
       flex-direction: column;
@@ -174,13 +175,9 @@
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <h1>Localize</h1>
-      <p>Translate your Figma frames to multiple languages</p>
-    </div>
-
     <div class="input-group">
       <label for="targetLang">Select Languages</label>
+      <div class="help-text">Hold ⌘ (Mac) or Ctrl (Windows) to select multiple languages</div>
       <select id="targetLang" multiple>
         <option value="ar">Arabic</option>
         <option value="hy-AM">Armenian</option>
@@ -242,7 +239,7 @@
         <option value="vi">Vietnamese</option>
       </select>
       <div id="langError" class="error"></div>
-      <div class="help-text">Hold ⌘ (Mac) or Ctrl (Windows) to select multiple languages</div>
+      <div class="help-text" id="langCounter">0 languages selected</div>
     </div>
 
     <button id="translateBtn" class="button" disabled>
@@ -259,6 +256,7 @@
     const translateBtn = document.getElementById('translateBtn');
     const resetBtn = document.getElementById('resetBtn');
     const langError = document.getElementById('langError');
+    const langCounter = document.getElementById('langCounter');
 
     // Handle messages from the plugin code
     window.onmessage = (event) => {
@@ -267,6 +265,9 @@
       if (msg.type === 'done') {
         translateBtn.disabled = false;
         translateBtn.textContent = 'Translate Selected Frame';
+      } else if (msg.type === 'updateTextCount') {
+        const { count } = msg;
+        translateBtn.textContent = `Translate ${count} Text Node${count !== 1 ? 's' : ''}`;
       }
     };
 
@@ -280,6 +281,9 @@
       const hasSelectedLanguages = selectedLangs.length > 0;
       
       translateBtn.disabled = !hasSelectedLanguages;
+      
+      // Update language counter
+      langCounter.textContent = `${selectedLangs.length} language${selectedLangs.length !== 1 ? 's' : ''} selected`;
       
       // Show error messages if needed
       if (!hasSelectedLanguages) {

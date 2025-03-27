@@ -81,6 +81,43 @@ async function translateText(text: string, targetLang: string): Promise<string> 
 // Show the UI
 figma.showUI(__html__, { width: 400, height: 600 });
 
+// Function to count text nodes in a frame
+function countTextNodes(node: SceneNode): number {
+  let count = 0;
+  if (node.type === 'TEXT') {
+    count++;
+  } else if ('children' in node) {
+    for (const child of node.children) {
+      count += countTextNodes(child);
+    }
+  }
+  return count;
+}
+
+// Function to update text count in UI
+async function updateTextCount() {
+  const selectedNodes = figma.currentPage.selection;
+  const selectedFrames = selectedNodes.filter((node): node is FrameNode => node.type === 'FRAME');
+  
+  let totalTextNodes = 0;
+  for (const frame of selectedFrames) {
+    totalTextNodes += countTextNodes(frame);
+  }
+  
+  figma.ui.postMessage({ 
+    type: 'updateTextCount',
+    count: totalTextNodes
+  });
+}
+
+// Initial count for any pre-selected frames
+updateTextCount();
+
+// Listen for selection changes
+figma.on('selectionchange', () => {
+  updateTextCount();
+});
+
 // Handle messages from the UI
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'translate') {
