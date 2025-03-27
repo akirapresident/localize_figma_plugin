@@ -91,7 +91,7 @@ async function translateText(text: string, targetLang: string): Promise<string> 
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 500 });
+figma.showUI(__html__, { width: 400, height: 400 });
 
 // Initial check for selected frames and status
 updateTextCount();
