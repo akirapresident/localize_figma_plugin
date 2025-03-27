@@ -72,32 +72,42 @@ async function translateText(text: string, apiKey: string, targetLang: string): 
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 608 });
+figma.showUI(__html__, { width: 400, height: 600 });
+
+// Load saved API key
+figma.clientStorage.getAsync('apiKey').then(savedApiKey => {
+  if (savedApiKey) {
+    figma.ui.postMessage({ type: 'loadApiKey', apiKey: savedApiKey });
+  }
+});
 
 // Handle messages from the UI
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'translate') {
     const { apiKey, targetLangs } = msg;
     
+    // Save API key
+    await figma.clientStorage.setAsync('apiKey', apiKey);
+    
     // Get all selected nodes
     const selectedNodes = figma.currentPage.selection;
     
     if (selectedNodes.length === 0) {
-      figma.ui.postMessage({ type: 'error', error: 'Please select at least one frame to translate' });
+      figma.notify('Please select at least one frame', { error: true });
       return;
     }
-
-    // Filter to only include frame nodes
+    
+    // Filter for frame nodes only
     const selectedFrames = selectedNodes.filter((node): node is FrameNode => node.type === 'FRAME');
     
     if (selectedFrames.length === 0) {
-      figma.ui.postMessage({ type: 'error', error: 'Please select at least one frame to translate' });
+      figma.notify('Please select at least one frame', { error: true });
       return;
     }
-
+    
     let hasErrors = false;
-    let firstFrameTranslationsY: number[] = [];
-
+    const firstFrameTranslationsY: number[] = [];
+    
     // Process each selected frame
     for (const frame of selectedFrames) {
       // Find all text nodes within the frame
@@ -161,7 +171,13 @@ figma.ui.onmessage = async (msg) => {
             try {
               // Load fonts before modifying text
               const fontNames = textNode.getRangeAllFontNames(0, textNode.characters.length);
-              await Promise.all(fontNames.map(figma.loadFontAsync));
+              try {
+                await Promise.all(fontNames.map(figma.loadFontAsync));
+              } catch (fontError: any) {
+                console.warn(`Font loading error: ${fontError.message}`);
+                figma.notify('⚠️ Some fonts could not be loaded. Please temporarily change the font to Roboto or Inter, then change it back after translation.', { timeout: 10000 });
+                // Continue with translation despite font error
+              }
               
               // Get the language name for the notification
               const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;

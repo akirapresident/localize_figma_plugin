@@ -197,7 +197,7 @@
       <input type="password" id="apiKey" placeholder="sk-..." />
       <div id="apiKeyError" class="error"></div>
       <div class="help-text">
-        Your API key is never stored and is only used for translation.
+        Your API key is stored securely and will be remembered for future use.
         <a href="https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key" target="_blank" class="help-link">Learn how to get your API key</a>
       </div>
     </div>
@@ -279,6 +279,19 @@
     const translateBtn = document.getElementById('translateBtn');
     const apiKeyError = document.getElementById('apiKeyError');
     const langError = document.getElementById('langError');
+
+    // Handle messages from the plugin code
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      
+      if (msg.type === 'loadApiKey') {
+        apiKeyInput.value = msg.apiKey;
+        updateButtonState();
+      } else if (msg.type === 'done') {
+        translateBtn.disabled = false;
+        translateBtn.textContent = 'Translate Selected Frame';
+      }
+    };
 
     function updateButtonState() {
       const apiKey = apiKeyInput.value.trim();
