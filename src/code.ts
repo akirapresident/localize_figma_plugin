@@ -17,6 +17,9 @@ const languages = [
 // Store the API key directly in the code
 const OPENAI_API_KEY = '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';
 
+// Constants for freemium feature
+const FREE_FRAMES_LIMIT = 2;
+
 // Add these types at the top of the file
 type TranslationResponse = {
   choices: {
@@ -26,9 +29,18 @@ type TranslationResponse = {
   }[];
 };
 
-// Constants for freemium feature
-const FREE_FRAMES_LIMIT = 2;
-const SUBSCRIPTION_PRICE = 2.00; // Minimum price in USD
+// Function to update status display
+async function updateStatusDisplay() {
+  const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
+  const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
+  const isSubscribed = figma.payments?.status.type === 'PAID';
+
+  figma.ui.postMessage({
+    type: 'updateStatus',
+    remainingCredits,
+    isSubscribed
+  });
+}
 
 async function translateText(text: string, targetLang: string): Promise<string> {
   try {
@@ -78,22 +90,12 @@ async function translateText(text: string, targetLang: string): Promise<string> 
   }
 }
 
-// Function to update credits display in UI
-async function updateCreditsDisplay() {
-  const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
-  const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
-  figma.ui.postMessage({
-    type: 'updateCredits',
-    remainingCredits
-  });
-}
-
 // Show the UI
 figma.showUI(__html__, { width: 400, height: 500 });
 
-// Initial check for selected frames and credits
+// Initial check for selected frames and status
 updateTextCount();
-updateCreditsDisplay();
+updateStatusDisplay();
 
 // Listen for selection changes
 figma.on('selectionchange', () => {
@@ -137,26 +139,35 @@ figma.ui.onmessage = async (msg) => {
       return;
     }
 
-    // Get translated frames count
+    // Check subscription status and credits
     const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
+    const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
+    const isSubscribed = figma.payments?.status.type === 'PAID';
 
-    // Check payment status and frame count
-    if (figma.payments) {
-      const paymentStatus = figma.payments.status;
-      const isTestMode = await figma.clientStorage.getAsync('testMode') || false;
+    if (!isSubscribed && remainingCredits === 0) {
+      if (!figma.payments) {
+        figma.notify('Payment system not available', { error: true });
+        figma.ui.postMessage({ type: 'done' });
+        return;
+      }
 
-      // If user hasn't paid and has reached the free limit
-      if ((paymentStatus.type === 'UNPAID' || isTestMode) && translatedFramesCount >= FREE_FRAMES_LIMIT) {
+      try {
         // Show payment UI
         await figma.payments.initiateCheckoutAsync({
-          interstitial: 'TRIAL_ENDED'
+          interstitial: 'PAID_FEATURE'
         });
 
         // Check if user completed payment
         if (figma.payments.status.type === 'UNPAID') {
           figma.notify('Please subscribe to continue translating frames', { error: true });
+          figma.ui.postMessage({ type: 'done' });
           return;
         }
+      } catch (error) {
+        // User closed the payment popup
+        figma.notify('Please subscribe to continue translating frames', { error: true });
+        figma.ui.postMessage({ type: 'done' });
+        return;
       }
     }
 
@@ -256,38 +267,46 @@ figma.ui.onmessage = async (msg) => {
       }
     }
 
-    // Update translated frames count and credits display
-    await figma.clientStorage.setAsync('translatedFramesCount', translatedFramesCount + selectedFrames.length);
-    updateCreditsDisplay();
+    // Update translated frames count and status display
+    if (!isSubscribed) {
+      await figma.clientStorage.setAsync('translatedFramesCount', translatedFramesCount + selectedFrames.length);
+    }
+    updateStatusDisplay();
 
     if (!hasErrors) {
       figma.notify('Translation completed successfully!');
     }
     
     figma.ui.postMessage({ type: 'done' });
-  } else if (msg.type === 'reset') {
-    // Reset the translated frames count
-    await figma.clientStorage.setAsync('translatedFramesCount', 0);
-    updateCreditsDisplay();
-    figma.notify('Free credits have been reset!');
-  } else if (msg.type === 'resetSubscription') {
-    // Reset the subscription status for testing
-    await figma.clientStorage.setAsync('testMode', true);
-    figma.notify('Subscription has been reset! (Test Mode)');
-  } else if (msg.type === 'getCreditsCount') {
-    updateCreditsDisplay();
+  } else if (msg.type === 'getStatus') {
+    await updateStatusDisplay();
   } else if (msg.type === 'subscribe') {
     if (figma.payments) {
-      // Show payment UI
-      await figma.payments.initiateCheckoutAsync({
-        interstitial: 'TRIAL_ENDED'
-      });
+      try {
+        // Show payment UI
+        await figma.payments.initiateCheckoutAsync({
+          interstitial: 'PAID_FEATURE'
+        });
 
-      // Check if user completed payment
-      if (figma.payments.status.type === 'PAID') {
-        figma.notify('Thank you for subscribing!');
-        // Reset test mode if it was set
-        await figma.clientStorage.setAsync('testMode', false);
+        // Check if user completed payment
+        if (figma.payments.status.type === 'PAID') {
+          figma.notify('Thank you for subscribing!');
+          // Reset credits when user subscribes
+          await figma.clientStorage.setAsync('translatedFramesCount', 0);
+          // Update UI with new status
+          await updateStatusDisplay();
+        } else {
+          // User closed the payment popup without subscribing
+          figma.notify('Subscription cancelled', { error: true });
+          // Make sure we update UI to show user is not subscribed
+          await updateStatusDisplay();
+        }
+      } catch (error) {
+        // Handle any errors during subscription process
+        console.error('Subscription error:', error);
+        figma.notify('Subscription cancelled', { error: true });
+        // Make sure we update UI to show user is not subscribed
+        await updateStatusDisplay();
       }
     }
   }
