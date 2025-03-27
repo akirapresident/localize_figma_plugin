@@ -26,6 +26,10 @@ type TranslationResponse = {
   }[];
 };
 
+// Constants for freemium feature
+const FREE_FRAMES_LIMIT = 2;
+const SUBSCRIPTION_PRICE = 2.00; // Minimum price in USD
+
 async function translateText(text: string, targetLang: string): Promise<string> {
   try {
     console.log(`Starting translation to ${targetLang}: "${text}"`);
@@ -97,7 +101,29 @@ figma.ui.onmessage = async (msg) => {
       figma.notify('Please select at least one frame', { error: true });
       return;
     }
-    
+
+    // Get translated frames count
+    const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
+
+    // Check payment status and frame count
+    if (figma.payments) {
+      const paymentStatus = figma.payments.status;
+
+      // If user hasn't paid and has reached the free limit
+      if (paymentStatus.type === 'UNPAID' && translatedFramesCount >= FREE_FRAMES_LIMIT) {
+        // Show payment UI
+        await figma.payments.initiateCheckoutAsync({
+          interstitial: 'TRIAL_ENDED'
+        });
+
+        // Check if user completed payment
+        if (figma.payments.status.type === 'UNPAID') {
+          figma.notify('Please subscribe to continue translating frames', { error: true });
+          return;
+        }
+      }
+    }
+
     let hasErrors = false;
     const firstFrameTranslationsY: number[] = [];
     
@@ -194,10 +220,17 @@ figma.ui.onmessage = async (msg) => {
       }
     }
 
+    // Update translated frames count
+    await figma.clientStorage.setAsync('translatedFramesCount', translatedFramesCount + selectedFrames.length);
+
     if (!hasErrors) {
       figma.notify('Translation completed successfully!');
     }
     
     figma.ui.postMessage({ type: 'done' });
+  } else if (msg.type === 'reset') {
+    // Reset the translated frames count
+    await figma.clientStorage.setAsync('translatedFramesCount', 0);
+    figma.notify('Free credits have been reset!');
   }
 };

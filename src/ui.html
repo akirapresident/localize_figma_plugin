@@ -249,11 +249,16 @@
     <button id="translateBtn" class="button" disabled>
       Translate Selected Frame
     </button>
+
+    <button id="resetBtn" class="button" style="background-color: #FF3B30;">
+      Reset Free Credits
+    </button>
   </div>
 
   <script>
     const targetLangSelect = document.getElementById('targetLang');
     const translateBtn = document.getElementById('translateBtn');
+    const resetBtn = document.getElementById('resetBtn');
     const langError = document.getElementById('langError');
 
     // Handle messages from the plugin code
@@ -307,6 +312,15 @@
         pluginMessage: { 
           type: 'translate',
           targetLangs: selectedLangs
+        }
+      }, '*');
+    };
+
+    resetBtn.onclick = () => {
+      // Send message to plugin code to reset credits
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'reset'
         }
       }, '*');
     };
