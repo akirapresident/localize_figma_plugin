@@ -14,6 +14,9 @@ const languages = [
   { name: "Arabic", code: "ar" }
 ];
 
+// Store the API key directly in the code
+const OPENAI_API_KEY = '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';
+
 // Add these types at the top of the file
 type TranslationResponse = {
   choices: {
@@ -23,7 +26,7 @@ type TranslationResponse = {
   }[];
 };
 
-async function translateText(text: string, apiKey: string, targetLang: string): Promise<string> {
+async function translateText(text: string, targetLang: string): Promise<string> {
   try {
     console.log(`Starting translation to ${targetLang}: "${text}"`);
     
@@ -31,7 +34,7 @@ async function translateText(text: string, apiKey: string, targetLang: string): 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey.trim()}`
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
@@ -74,20 +77,10 @@ async function translateText(text: string, apiKey: string, targetLang: string): 
 // Show the UI
 figma.showUI(__html__, { width: 400, height: 600 });
 
-// Load saved API key
-figma.clientStorage.getAsync('apiKey').then(savedApiKey => {
-  if (savedApiKey) {
-    figma.ui.postMessage({ type: 'loadApiKey', apiKey: savedApiKey });
-  }
-});
-
 // Handle messages from the UI
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'translate') {
-    const { apiKey, targetLangs } = msg;
-    
-    // Save API key
-    await figma.clientStorage.setAsync('apiKey', apiKey);
+    const { targetLangs } = msg;
     
     // Get all selected nodes
     const selectedNodes = figma.currentPage.selection;
@@ -184,7 +177,7 @@ figma.ui.onmessage = async (msg) => {
               figma.notify(`Translating to ${languageName}...`);
               
               // Translate the text
-              const translatedText = await translateText(originalText, apiKey, targetLang);
+              const translatedText = await translateText(originalText, targetLang);
               textNode.characters = translatedText;
               console.log(`Translated: "${originalText}" → "${translatedText}"`);
             } catch (error: any) {

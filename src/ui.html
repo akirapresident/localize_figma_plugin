@@ -29,7 +29,7 @@
       margin-bottom: 2px;
     }
 
-    input, select {
+    select {
       padding: 12px;
       border: 1px solid var(--figma-color-border);
       border-radius: 8px;
@@ -39,21 +39,9 @@
       transition: all 0.2s ease;
     }
 
-    input:focus, select:focus {
+    select:focus {
       outline: none;
       border-color: #007AFF;
-      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
-    }
-
-    input[type="password"] {
-      border: 1.5px solid #E5E5EA;
-      background-color: #F2F2F7;
-      letter-spacing: 0.5px;
-    }
-
-    input[type="password"]:focus {
-      border-color: #007AFF;
-      background-color: var(--figma-color-bg);
       box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
     }
 
@@ -193,16 +181,6 @@
     </div>
 
     <div class="input-group">
-      <label for="apiKey">OpenAI API Key</label>
-      <input type="password" id="apiKey" placeholder="sk-..." />
-      <div id="apiKeyError" class="error"></div>
-      <div class="help-text">
-        Your API key is stored securely and will be remembered for future use.
-        <a href="https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key" target="_blank" class="help-link">Learn how to get your API key</a>
-      </div>
-    </div>
-    
-    <div class="input-group">
       <label for="targetLang">Select Languages</label>
       <select id="targetLang" multiple>
         <option value="ar">Arabic</option>
@@ -274,65 +252,45 @@
   </div>
 
   <script>
-    const apiKeyInput = document.getElementById('apiKey');
     const targetLangSelect = document.getElementById('targetLang');
     const translateBtn = document.getElementById('translateBtn');
-    const apiKeyError = document.getElementById('apiKeyError');
     const langError = document.getElementById('langError');
 
     // Handle messages from the plugin code
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       
-      if (msg.type === 'loadApiKey') {
-        apiKeyInput.value = msg.apiKey;
-        updateButtonState();
-      } else if (msg.type === 'done') {
+      if (msg.type === 'done') {
         translateBtn.disabled = false;
         translateBtn.textContent = 'Translate Selected Frame';
       }
     };
 
     function updateButtonState() {
-      const apiKey = apiKeyInput.value.trim();
       const selectedLangs = Array.from(targetLangSelect.selectedOptions).map(option => option.value);
       
       // Reset errors
-      apiKeyError.textContent = '';
       langError.textContent = '';
       
-      // Enable button if API key is valid and at least one language is selected
-      const isValidApiKey = apiKey.length > 0 && apiKey.startsWith('sk-');
+      // Enable button if at least one language is selected
       const hasSelectedLanguages = selectedLangs.length > 0;
       
-      translateBtn.disabled = !(isValidApiKey && hasSelectedLanguages);
+      translateBtn.disabled = !hasSelectedLanguages;
       
       // Show error messages if needed
-      if (!isValidApiKey && apiKey.length > 0) {
-        apiKeyError.textContent = 'Please enter a valid OpenAI API key';
-      }
       if (!hasSelectedLanguages) {
         langError.textContent = 'Please select at least one language';
       }
     }
 
     // Add event listeners
-    apiKeyInput.addEventListener('input', updateButtonState);
     targetLangSelect.addEventListener('change', updateButtonState);
 
     translateBtn.onclick = () => {
-      const apiKey = apiKeyInput.value;
       const selectedLangs = Array.from(targetLangSelect.selectedOptions).map(option => option.value);
       
       // Reset errors
-      apiKeyError.textContent = '';
       langError.textContent = '';
-      
-      // Validate API key
-      if (!apiKey.startsWith('sk-')) {
-        apiKeyError.textContent = 'Please enter a valid OpenAI API key';
-        return;
-      }
       
       // Validate language selection
       if (selectedLangs.length === 0) {
@@ -348,7 +306,6 @@
       parent.postMessage({ 
         pluginMessage: { 
           type: 'translate',
-          apiKey,
           targetLangs: selectedLangs
         }
       }, '*');
