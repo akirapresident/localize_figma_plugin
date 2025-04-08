@@ -1,9 +1,9 @@
 {
-  "name": "Localize",
-  "id": "1174728261122583026",
+  "name": "Lexi: Localize & Translate your design",
+  "id": "1488920953113362959",
   "api": "1.0.0",
   "main": "dist/code.js",
-  "editorType": ["figma", "figjam"],
+  "editorType": ["figma"],
   "ui": "src/ui.html",
   "networkAccess": {
     "allowedDomains": [
@@ -14,4 +14,4 @@
   "permissions": ["currentuser", "payments"],
   "enablePrivatePluginApi": false,
   "enableProposedApi": false
-}
+} 
