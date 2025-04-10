@@ -267,6 +267,53 @@
     .language-option:not(.selected):hover {
       background: rgba(0, 122, 255, 0.1);
     }
+
+    .search-container {
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 8px 12px 8px 32px;
+      border: 1px solid #C0C0C0;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: var(--font-family);
+      background-color: var(--figma-color-bg);
+      color: #000000;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: #C0C0C0;
+      box-shadow: 0 0 0 2px rgba(192, 192, 192, 0.1);
+    }
+
+    .search-input::placeholder {
+      color: #C0C0C0;
+    }
+
+    .search-container::before {
+      content: "🔍";
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      color: var(--figma-color-text-secondary);
+      pointer-events: none;
+    }
+
+    .no-results {
+      padding: 8px;
+      text-align: center;
+      color: var(--figma-color-text-secondary);
+      font-size: 12px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -287,69 +334,73 @@
         <label for="targetLang">Target Languages</label>
         <button id="selectAllBtn" class="select-all-btn">Select All</button>
       </div>
-      <div class="help-text">Click to select/deselect languages</div>
-      <div id="targetLang" class="language-list">
-        <div class="language-option" data-value="ar">Arabic</div>
-        <div class="language-option" data-value="hy-AM">Armenian</div>
-        <div class="language-option" data-value="eu-ES">Basque</div>
-        <div class="language-option" data-value="bn-BD">Bengali</div>
-        <div class="language-option" data-value="bg">Bulgarian</div>
-        <div class="language-option" data-value="ca">Catalan</div>
-        <div class="language-option" data-value="zh-CN">Chinese (Simplified)</div>
-        <div class="language-option" data-value="zh-TW">Chinese (Traditional)</div>
-        <div class="language-option" data-value="zh-HK">Chinese (Hong Kong)</div>
-        <div class="language-option" data-value="hr">Croatian</div>
-        <div class="language-option" data-value="cs-CZ">Czech</div>
-        <div class="language-option" data-value="da-DK">Danish</div>
-        <div class="language-option" data-value="nl-NL">Dutch</div>
-        <div class="language-option" data-value="en-AU">English (Australia)</div>
-        <div class="language-option" data-value="en-CA">English (Canada)</div>
-        <div class="language-option" data-value="en-GB">English (Great Britain)</div>
-        <div class="language-option" data-value="en-IN">English (India)</div>
-        <div class="language-option" data-value="et">Estonian</div>
-        <div class="language-option" data-value="fi-FI">Finnish</div>
-        <div class="language-option" data-value="fr">French</div>
-        <div class="language-option" data-value="fr-CA">French (Canada)</div>
-        <div class="language-option" data-value="fr-FR">French (France)</div>
-        <div class="language-option" data-value="de-DE">German</div>
-        <div class="language-option" data-value="el-GR">Greek</div>
-        <div class="language-option" data-value="gu">Gujarati</div>
-        <div class="language-option" data-value="iw-IL">Hebrew</div>
-        <div class="language-option" data-value="hi-IN">Hindi</div>
-        <div class="language-option" data-value="hu-HU">Hungarian</div>
-        <div class="language-option" data-value="id">Indonesian</div>
-        <div class="language-option" data-value="it-IT">Italian</div>
-        <div class="language-option" data-value="ja-JP">Japanese</div>
-        <div class="language-option" data-value="kn-IN">Kannada</div>
-        <div class="language-option" data-value="ko-KR">Korean</div>
-        <div class="language-option" data-value="lt">Lithuanian</div>
-        <div class="language-option" data-value="ms">Malay</div>
-        <div class="language-option" data-value="ms-MY">Malay (Malaysia)</div>
-        <div class="language-option" data-value="no-NO">Norwegian</div>
-        <div class="language-option" data-value="fa">Persian</div>
-        <div class="language-option" data-value="fa-IR">Persian (Iran)</div>
-        <div class="language-option" data-value="pl-PL">Polish</div>
-        <div class="language-option" data-value="pt-BR">Portuguese (Brazil)</div>
-        <div class="language-option" data-value="pt-PT">Portuguese (Portugal)</div>
-        <div class="language-option" data-value="pa">Punjabi</div>
-        <div class="language-option" data-value="ro">Romanian</div>
-        <div class="language-option" data-value="ru">Russian</div>
-        <div class="language-option" data-value="sk">Slovak</div>
-        <div class="language-option" data-value="sl">Slovenian</div>
-        <div class="language-option" data-value="es-419">Spanish (Latin America)</div>
-        <div class="language-option" data-value="es-ES">Spanish (Spain)</div>
-        <div class="language-option" data-value="es-US">Spanish (United States)</div>
-        <div class="language-option" data-value="sv-SE">Swedish</div>
-        <div class="language-option" data-value="ta-IN">Tamil</div>
-        <div class="language-option" data-value="te-IN">Telugu</div>
-        <div class="language-option" data-value="th">Thai</div>
-        <div class="language-option" data-value="tr-TR">Turkish</div>
-        <div class="language-option" data-value="uk">Ukrainian</div>
-        <div class="language-option" data-value="ur">Urdu</div>
-        <div class="language-option" data-value="vi">Vietnamese</div>
+      <div class="section">
+        <div class="search-container">
+          <input type="text" id="languageSearch" placeholder="Search languages..." class="search-input">
+        </div>
+        <div class="language-list" id="targetLang">
+          <div class="language-option" data-value="ar">Arabic</div>
+          <div class="language-option" data-value="hy-AM">Armenian</div>
+          <div class="language-option" data-value="eu-ES">Basque</div>
+          <div class="language-option" data-value="bn-BD">Bengali</div>
+          <div class="language-option" data-value="bg">Bulgarian</div>
+          <div class="language-option" data-value="ca">Catalan</div>
+          <div class="language-option" data-value="zh-CN">Chinese (Simplified)</div>
+          <div class="language-option" data-value="zh-TW">Chinese (Traditional)</div>
+          <div class="language-option" data-value="zh-HK">Chinese (Hong Kong)</div>
+          <div class="language-option" data-value="hr">Croatian</div>
+          <div class="language-option" data-value="cs-CZ">Czech</div>
+          <div class="language-option" data-value="da-DK">Danish</div>
+          <div class="language-option" data-value="nl-NL">Dutch</div>
+          <div class="language-option" data-value="en-AU">English (Australia)</div>
+          <div class="language-option" data-value="en-CA">English (Canada)</div>
+          <div class="language-option" data-value="en-GB">English (Great Britain)</div>
+          <div class="language-option" data-value="en-IN">English (India)</div>
+          <div class="language-option" data-value="et">Estonian</div>
+          <div class="language-option" data-value="fi-FI">Finnish</div>
+          <div class="language-option" data-value="fr">French</div>
+          <div class="language-option" data-value="fr-CA">French (Canada)</div>
+          <div class="language-option" data-value="fr-FR">French (France)</div>
+          <div class="language-option" data-value="de-DE">German</div>
+          <div class="language-option" data-value="el-GR">Greek</div>
+          <div class="language-option" data-value="gu">Gujarati</div>
+          <div class="language-option" data-value="iw-IL">Hebrew</div>
+          <div class="language-option" data-value="hi-IN">Hindi</div>
+          <div class="language-option" data-value="hu-HU">Hungarian</div>
+          <div class="language-option" data-value="id">Indonesian</div>
+          <div class="language-option" data-value="it-IT">Italian</div>
+          <div class="language-option" data-value="ja-JP">Japanese</div>
+          <div class="language-option" data-value="kn-IN">Kannada</div>
+          <div class="language-option" data-value="ko-KR">Korean</div>
+          <div class="language-option" data-value="lt">Lithuanian</div>
+          <div class="language-option" data-value="ms">Malay</div>
+          <div class="language-option" data-value="ms-MY">Malay (Malaysia)</div>
+          <div class="language-option" data-value="no-NO">Norwegian</div>
+          <div class="language-option" data-value="fa">Persian</div>
+          <div class="language-option" data-value="fa-IR">Persian (Iran)</div>
+          <div class="language-option" data-value="pl-PL">Polish</div>
+          <div class="language-option" data-value="pt-BR">Portuguese (Brazil)</div>
+          <div class="language-option" data-value="pt-PT">Portuguese (Portugal)</div>
+          <div class="language-option" data-value="pa">Punjabi</div>
+          <div class="language-option" data-value="ro">Romanian</div>
+          <div class="language-option" data-value="ru">Russian</div>
+          <div class="language-option" data-value="sk">Slovak</div>
+          <div class="language-option" data-value="sl">Slovenian</div>
+          <div class="language-option" data-value="es-419">Spanish (Latin America)</div>
+          <div class="language-option" data-value="es-ES">Spanish (Spain)</div>
+          <div class="language-option" data-value="es-US">Spanish (United States)</div>
+          <div class="language-option" data-value="sv-SE">Swedish</div>
+          <div class="language-option" data-value="ta-IN">Tamil</div>
+          <div class="language-option" data-value="te-IN">Telugu</div>
+          <div class="language-option" data-value="th">Thai</div>
+          <div class="language-option" data-value="tr-TR">Turkish</div>
+          <div class="language-option" data-value="uk">Ukrainian</div>
+          <div class="language-option" data-value="ur">Urdu</div>
+          <div class="language-option" data-value="vi">Vietnamese</div>
+        </div>
+        <div id="langError" class="error"></div>
+        <div class="help-text" id="langCounter">0 languages selected</div>
       </div>
-      <div id="langError" class="error"></div>
-      <div class="help-text" id="langCounter">0 languages selected</div>
     </div>
 
     <button id="translateBtn" class="button" disabled>
@@ -364,6 +415,12 @@
     const langCounter = document.getElementById('langCounter');
     const creditsCount = document.getElementById('creditsCount');
     const subscriptionStatus = document.getElementById('subscriptionStatus');
+    const languageSearch = document.getElementById('languageSearch');
+    const languageList = document.getElementById('targetLang');
+    const noResults = document.createElement('div');
+    noResults.className = 'no-results';
+    noResults.textContent = 'No languages found';
+    languageList.appendChild(noResults);
 
     let currentTextCount = 0;
     let isSubscribed = false;
@@ -496,6 +553,21 @@
         }
       }, '*');
     };
+
+    languageSearch.addEventListener('input', (e) => {
+      const searchTerm = e.target.value.toLowerCase();
+      const options = languageList.querySelectorAll('.language-option');
+      let hasVisibleOptions = false;
+
+      options.forEach(option => {
+        const languageName = option.textContent.toLowerCase();
+        const matchesSearch = languageName.includes(searchTerm);
+        option.style.display = matchesSearch ? 'flex' : 'none';
+        if (matchesSearch) hasVisibleOptions = true;
+      });
+
+      noResults.style.display = hasVisibleOptions ? 'none' : 'block';
+    });
   </script>
 </body>
 </html> 
