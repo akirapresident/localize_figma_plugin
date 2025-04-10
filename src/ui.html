@@ -22,6 +22,13 @@
       gap: 4px;
     }
 
+    .input-group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
     label {
       font-size: 14px;
       font-weight: 600;
@@ -211,6 +218,55 @@
       align-items: center;
       gap: 4px;
     }
+
+    .select-all-container {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 8px;
+    }
+
+    .select-all-btn {
+      background: none;
+      border: none;
+      color: #007AFF;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .select-all-btn:hover {
+      background: var(--figma-color-bg-hover);
+    }
+
+    .language-list {
+      height: 200px;
+      overflow-y: auto;
+      border: 1px solid #007AFF;
+      border-radius: 8px;
+      background: var(--figma-color-bg);
+    }
+
+    .language-option {
+      padding: 12px;
+      border-bottom: 1px solid var(--figma-color-border);
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--figma-color-text);
+    }
+
+    .language-option:last-child {
+      border-bottom: none;
+    }
+
+    .language-option.selected {
+      background: #007AFF;
+      color: white;
+    }
+
+    .language-option:not(.selected):hover {
+      background: rgba(0, 122, 255, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -227,68 +283,71 @@
     </div>
 
     <div class="input-group">
-      <label for="targetLang">Select Languages</label>
+      <div class="input-group-header">
+        <label for="targetLang">Target Languages</label>
+        <button id="selectAllBtn" class="select-all-btn">Select All</button>
+      </div>
       <div class="help-text">Click to select/deselect languages</div>
-      <select id="targetLang" multiple>
-        <option value="ar">Arabic</option>
-        <option value="hy-AM">Armenian</option>
-        <option value="eu-ES">Basque</option>
-        <option value="bn-BD">Bengali</option>
-        <option value="bg">Bulgarian</option>
-        <option value="ca">Catalan</option>
-        <option value="zh-CN">Chinese (Simplified)</option>
-        <option value="zh-TW">Chinese (Traditional)</option>
-        <option value="zh-HK">Chinese (Hong Kong)</option>
-        <option value="hr">Croatian</option>
-        <option value="cs-CZ">Czech</option>
-        <option value="da-DK">Danish</option>
-        <option value="nl-NL">Dutch</option>
-        <option value="en-AU">English (Australia)</option>
-        <option value="en-CA">English (Canada)</option>
-        <option value="en-GB">English (Great Britain)</option>
-        <option value="en-IN">English (India)</option>
-        <option value="et">Estonian</option>
-        <option value="fi-FI">Finnish</option>
-        <option value="fr">French</option>
-        <option value="fr-CA">French (Canada)</option>
-        <option value="fr-FR">French (France)</option>
-        <option value="de-DE">German</option>
-        <option value="el-GR">Greek</option>
-        <option value="gu">Gujarati</option>
-        <option value="iw-IL">Hebrew</option>
-        <option value="hi-IN">Hindi</option>
-        <option value="hu-HU">Hungarian</option>
-        <option value="id">Indonesian</option>
-        <option value="it-IT">Italian</option>
-        <option value="ja-JP">Japanese</option>
-        <option value="kn-IN">Kannada</option>
-        <option value="ko-KR">Korean</option>
-        <option value="lt">Lithuanian</option>
-        <option value="ms">Malay</option>
-        <option value="ms-MY">Malay (Malaysia)</option>
-        <option value="no-NO">Norwegian</option>
-        <option value="fa">Persian</option>
-        <option value="fa-IR">Persian (Iran)</option>
-        <option value="pl-PL">Polish</option>
-        <option value="pt-BR">Portuguese (Brazil)</option>
-        <option value="pt-PT">Portuguese (Portugal)</option>
-        <option value="pa">Punjabi</option>
-        <option value="ro">Romanian</option>
-        <option value="ru">Russian</option>
-        <option value="sk">Slovak</option>
-        <option value="sl">Slovenian</option>
-        <option value="es-419">Spanish (Latin America)</option>
-        <option value="es-ES">Spanish (Spain)</option>
-        <option value="es-US">Spanish (United States)</option>
-        <option value="sv-SE">Swedish</option>
-        <option value="ta-IN">Tamil</option>
-        <option value="te-IN">Telugu</option>
-        <option value="th">Thai</option>
-        <option value="tr-TR">Turkish</option>
-        <option value="uk">Ukrainian</option>
-        <option value="ur">Urdu</option>
-        <option value="vi">Vietnamese</option>
-      </select>
+      <div id="targetLang" class="language-list">
+        <div class="language-option" data-value="ar">Arabic</div>
+        <div class="language-option" data-value="hy-AM">Armenian</div>
+        <div class="language-option" data-value="eu-ES">Basque</div>
+        <div class="language-option" data-value="bn-BD">Bengali</div>
+        <div class="language-option" data-value="bg">Bulgarian</div>
+        <div class="language-option" data-value="ca">Catalan</div>
+        <div class="language-option" data-value="zh-CN">Chinese (Simplified)</div>
+        <div class="language-option" data-value="zh-TW">Chinese (Traditional)</div>
+        <div class="language-option" data-value="zh-HK">Chinese (Hong Kong)</div>
+        <div class="language-option" data-value="hr">Croatian</div>
+        <div class="language-option" data-value="cs-CZ">Czech</div>
+        <div class="language-option" data-value="da-DK">Danish</div>
+        <div class="language-option" data-value="nl-NL">Dutch</div>
+        <div class="language-option" data-value="en-AU">English (Australia)</div>
+        <div class="language-option" data-value="en-CA">English (Canada)</div>
+        <div class="language-option" data-value="en-GB">English (Great Britain)</div>
+        <div class="language-option" data-value="en-IN">English (India)</div>
+        <div class="language-option" data-value="et">Estonian</div>
+        <div class="language-option" data-value="fi-FI">Finnish</div>
+        <div class="language-option" data-value="fr">French</div>
+        <div class="language-option" data-value="fr-CA">French (Canada)</div>
+        <div class="language-option" data-value="fr-FR">French (France)</div>
+        <div class="language-option" data-value="de-DE">German</div>
+        <div class="language-option" data-value="el-GR">Greek</div>
+        <div class="language-option" data-value="gu">Gujarati</div>
+        <div class="language-option" data-value="iw-IL">Hebrew</div>
+        <div class="language-option" data-value="hi-IN">Hindi</div>
+        <div class="language-option" data-value="hu-HU">Hungarian</div>
+        <div class="language-option" data-value="id">Indonesian</div>
+        <div class="language-option" data-value="it-IT">Italian</div>
+        <div class="language-option" data-value="ja-JP">Japanese</div>
+        <div class="language-option" data-value="kn-IN">Kannada</div>
+        <div class="language-option" data-value="ko-KR">Korean</div>
+        <div class="language-option" data-value="lt">Lithuanian</div>
+        <div class="language-option" data-value="ms">Malay</div>
+        <div class="language-option" data-value="ms-MY">Malay (Malaysia)</div>
+        <div class="language-option" data-value="no-NO">Norwegian</div>
+        <div class="language-option" data-value="fa">Persian</div>
+        <div class="language-option" data-value="fa-IR">Persian (Iran)</div>
+        <div class="language-option" data-value="pl-PL">Polish</div>
+        <div class="language-option" data-value="pt-BR">Portuguese (Brazil)</div>
+        <div class="language-option" data-value="pt-PT">Portuguese (Portugal)</div>
+        <div class="language-option" data-value="pa">Punjabi</div>
+        <div class="language-option" data-value="ro">Romanian</div>
+        <div class="language-option" data-value="ru">Russian</div>
+        <div class="language-option" data-value="sk">Slovak</div>
+        <div class="language-option" data-value="sl">Slovenian</div>
+        <div class="language-option" data-value="es-419">Spanish (Latin America)</div>
+        <div class="language-option" data-value="es-ES">Spanish (Spain)</div>
+        <div class="language-option" data-value="es-US">Spanish (United States)</div>
+        <div class="language-option" data-value="sv-SE">Swedish</div>
+        <div class="language-option" data-value="ta-IN">Tamil</div>
+        <div class="language-option" data-value="te-IN">Telugu</div>
+        <div class="language-option" data-value="th">Thai</div>
+        <div class="language-option" data-value="tr-TR">Turkish</div>
+        <div class="language-option" data-value="uk">Ukrainian</div>
+        <div class="language-option" data-value="ur">Urdu</div>
+        <div class="language-option" data-value="vi">Vietnamese</div>
+      </div>
       <div id="langError" class="error"></div>
       <div class="help-text" id="langCounter">0 languages selected</div>
     </div>
@@ -311,11 +370,10 @@
     let remainingCredits = 2;
 
     // Custom click handler for language selection
-    targetLangSelect.addEventListener('mousedown', (e) => {
-      e.preventDefault();
+    targetLangSelect.addEventListener('click', (e) => {
       const option = e.target;
-      if (option.tagName === 'OPTION') {
-        option.selected = !option.selected;
+      if (option.classList.contains('language-option')) {
+        option.classList.toggle('selected');
         updateButtonState();
       }
     });
@@ -353,7 +411,7 @@
     }
 
     function updateButtonState() {
-      const selectedLangs = Array.from(targetLangSelect.selectedOptions).map(option => option.value);
+      const selectedLangs = getSelectedLanguages();
       
       // Reset errors
       langError.textContent = '';
@@ -384,11 +442,28 @@
       }
     }
 
-    // Add event listeners
-    targetLangSelect.addEventListener('change', updateButtonState);
+    // Update the getSelectedLanguages function
+    function getSelectedLanguages() {
+      return Array.from(targetLangSelect.querySelectorAll('.language-option.selected'))
+        .map(option => option.dataset.value);
+    }
 
+    // Update the Select All button functionality
+    selectAllBtn.addEventListener('click', () => {
+      const options = targetLangSelect.querySelectorAll('.language-option');
+      const allSelected = Array.from(options).every(option => option.classList.contains('selected'));
+      
+      options.forEach(option => {
+        option.classList.toggle('selected', !allSelected);
+      });
+      
+      updateButtonState();
+      selectAllBtn.textContent = allSelected ? 'Select All' : 'Deselect All';
+    });
+
+    // Update the translate button click handler
     translateBtn.onclick = async () => {
-      const selectedLangs = Array.from(targetLangSelect.selectedOptions).map(option => option.value);
+      const selectedLangs = getSelectedLanguages();
       
       // If not subscribed and no credits, initiate subscription
       if (!isSubscribed && remainingCredits === 0) {
