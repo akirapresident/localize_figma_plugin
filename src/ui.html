@@ -329,7 +329,7 @@
     };
 
     function updateStatusDisplay() {
-      creditsCount.textContent = remainingCredits.toString();
+      creditsCount.textContent = remainingCredits === '∞' ? '∞' : remainingCredits.toString();
       subscriptionStatus.textContent = isSubscribed ? 'Subscribed' : 'Unsubscribed';
       subscriptionStatus.className = `value ${isSubscribed ? 'subscribed' : 'unsubscribed'}`;
     }

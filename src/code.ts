@@ -32,7 +32,7 @@ type TranslationResponse = {
 // Function to update status display
 async function updateStatusDisplay() {
   const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
-  const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
+  const remainingCredits = figma.payments?.status.type === 'PAID' ? '∞' : Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
   const isSubscribed = figma.payments?.status.type === 'PAID';
 
   figma.ui.postMessage({
