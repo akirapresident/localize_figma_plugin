@@ -314,6 +314,68 @@
       font-size: 12px;
       display: none;
     }
+
+    /* Add new styles for the Do Not Translate section */
+    .do-not-translate {
+      margin-top: 16px;
+    }
+
+    .tag-input-container {
+      border: 1px solid #C0C0C0;
+      border-radius: 6px;
+      padding: 8px;
+      min-height: 36px;
+      background: var(--figma-color-bg);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      cursor: text;
+    }
+
+    .tag-input-container:focus-within {
+      border-color: #C0C0C0;
+      box-shadow: 0 0 0 2px rgba(192, 192, 192, 0.1);
+    }
+
+    .tag {
+      background: var(--figma-color-bg-secondary);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tag-remove {
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+
+    .tag-remove:hover {
+      opacity: 1;
+    }
+
+    .tag-input {
+      border: none;
+      outline: none;
+      font-size: 12px;
+      padding: 4px;
+      flex: 1;
+      min-width: 60px;
+      background: transparent;
+      color: var(--figma-color-text);
+    }
+
+    .tag-input::placeholder {
+      color: #C0C0C0;
+    }
+
+    .input-wrapper {
+      position: relative;
+      width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -400,6 +462,17 @@
         </div>
         <div id="langError" class="error"></div>
         <div class="help-text" id="langCounter">0 languages selected</div>
+      </div>
+    </div>
+
+    <div class="input-group do-not-translate">
+      <label for="excludedTerms">Do Not Translate</label>
+      <div class="help-text">Enter keywords that should not be translated (e.g. brand names, proper nouns)</div>
+      <div class="input-wrapper">
+        <div class="tag-input-container" id="tagContainer">
+          <div id="tagsArea"></div>
+          <input type="text" class="tag-input" id="tagInput" placeholder="Type to add keywords...">
+        </div>
       </div>
     </div>
 
@@ -567,6 +640,60 @@
       });
 
       noResults.style.display = hasVisibleOptions ? 'none' : 'block';
+    });
+
+    // Add JavaScript for the Do Not Translate functionality
+    const tagInput = document.getElementById('tagInput');
+    const tagContainer = document.getElementById('tagContainer');
+    const tagsArea = document.getElementById('tagsArea');
+    
+    let excludedTerms = [];
+
+    function createTag(term) {
+      const tag = document.createElement('div');
+      tag.className = 'tag';
+      tag.innerHTML = `
+        ${term}
+        <span class="tag-remove" onclick="removeTag('${term}')">&times;</span>
+      `;
+      return tag;
+    }
+
+    function addTag(term) {
+      if (term && !excludedTerms.includes(term)) {
+        excludedTerms.push(term);
+        tagsArea.appendChild(createTag(term));
+        tagInput.value = '';
+        updateExcludedTerms();
+      }
+    }
+
+    function removeTag(term) {
+      excludedTerms = excludedTerms.filter(t => t !== term);
+      updateTags();
+      updateExcludedTerms();
+    }
+
+    function updateTags() {
+      tagsArea.innerHTML = '';
+      excludedTerms.forEach(term => {
+        tagsArea.appendChild(createTag(term));
+      });
+    }
+
+    function updateExcludedTerms() {
+      // Send excluded terms to the plugin code
+      parent.postMessage({ pluginMessage: { 
+        type: 'updateExcludedTerms', 
+        terms: excludedTerms 
+      }}, '*');
+    }
+
+    tagInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && tagInput.value.trim()) {
+        e.preventDefault();
+        addTag(tagInput.value.trim());
+      }
     });
   </script>
 </body>

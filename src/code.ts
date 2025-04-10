@@ -29,6 +29,9 @@ type TranslationResponse = {
   }[];
 };
 
+// Add excluded terms storage at the top with other constants
+let excludedTerms: string[] = [];
+
 // Function to update status display
 async function updateStatusDisplay() {
   const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
@@ -57,14 +60,17 @@ async function translateText(text: string, targetLang: string): Promise<string> 
         messages: [
           {
             role: "system",
-            content: `You are a translator. Translate the following text to ${targetLang}. Only respond with the translation, no explanations or additional text.`
+            content: `You are a translator. Translate the following text to ${targetLang}. 
+            CRITICAL: Any token in the format [UNTRANSLATABLE_123] MUST remain exactly as is.
+            Only translate the parts that are not in [UNTRANSLATABLE_X] format.
+            Respond only with the translation, no explanations or additional text.`
           },
           {
             role: "user",
             content: text
           }
         ],
-        temperature: 0.3,
+        temperature: 0.1,
         max_tokens: 1000
       })
     });
@@ -91,7 +97,7 @@ async function translateText(text: string, targetLang: string): Promise<string> 
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 400 });
+figma.showUI(__html__, { width: 400, height: 600 });
 
 // Initial check for selected frames and status
 updateTextCount();
@@ -152,19 +158,16 @@ figma.ui.onmessage = async (msg) => {
       }
 
       try {
-        // Show payment UI
         await figma.payments.initiateCheckoutAsync({
           interstitial: 'PAID_FEATURE'
         });
 
-        // Check if user completed payment
         if (figma.payments.status.type === 'UNPAID') {
           figma.notify('Please subscribe to continue translating frames', { error: true });
           figma.ui.postMessage({ type: 'done' });
           return;
         }
       } catch (error) {
-        // User closed the payment popup
         figma.notify('Please subscribe to continue translating frames', { error: true });
         figma.ui.postMessage({ type: 'done' });
         return;
@@ -176,7 +179,6 @@ figma.ui.onmessage = async (msg) => {
     
     // Process each selected frame
     for (const frame of selectedFrames) {
-      // Find all text nodes within the frame
       const textNodes: TextNode[] = [];
       function findTextNodes(node: SceneNode) {
         if (node.type === 'TEXT') {
@@ -194,29 +196,21 @@ figma.ui.onmessage = async (msg) => {
         continue;
       }
 
-      // Create one clone for each target language
       for (let i = 0; i < targetLangs.length; i++) {
         const targetLang = targetLangs[i];
         try {
-          // Clone the frame for this translation
           const clonedFrame = frame.clone() as FrameNode;
           clonedFrame.name = `${frame.name} (${targetLang})`;
-          
-          // Position the cloned frame
           clonedFrame.x = frame.x;
           
-          // If this is the first frame, calculate and store the Y positions
           if (frame === selectedFrames[0]) {
-            // First translation starts 50px below the original frame
             const y = frame.y + frame.height + 50 + (i * (frame.height + 50));
             clonedFrame.y = y;
             firstFrameTranslationsY.push(y);
           } else {
-            // For subsequent frames, use the same Y positions as the first frame
             clonedFrame.y = firstFrameTranslationsY[i];
           }
           
-          // Find text nodes in the cloned frame
           const clonedTextNodes: TextNode[] = [];
           function findTextNodesInClone(node: SceneNode) {
             if (node.type === 'TEXT') {
@@ -229,30 +223,77 @@ figma.ui.onmessage = async (msg) => {
           }
           findTextNodesInClone(clonedFrame);
           
-          // Translate each text node in the cloned frame
           for (const textNode of clonedTextNodes) {
             const originalText = textNode.characters;
             if (!originalText.trim()) continue;
             
             try {
-              // Load fonts before modifying text
               const fontNames = textNode.getRangeAllFontNames(0, textNode.characters.length);
               try {
                 await Promise.all(fontNames.map(figma.loadFontAsync));
               } catch (fontError: any) {
                 console.warn(`Font loading error: ${fontError.message}`);
                 figma.notify('⚠️ Some fonts could not be loaded. Please temporarily change the font to Roboto or Inter, then change it back after translation.', { timeout: 10000 });
-                // Continue with translation despite font error
               }
               
-              // Get the language name for the notification
               const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
               figma.notify(`Translating to ${languageName}...`);
               
-              // Translate the text
-              const translatedText = await translateText(originalText, targetLang);
+              // Check if the text contains any excluded terms
+              let textToTranslate = originalText;
+              const placeholders: {[key: string]: string} = {};
+              let placeholderCount = 0;
+              
+              if (excludedTerms && excludedTerms.length > 0) {
+                console.log('Original text:', originalText);
+                console.log('Excluded terms to preserve:', excludedTerms);
+                
+                // Sort excluded terms by length (longest first) to avoid partial matches
+                const sortedExcludedTerms = [...excludedTerms]
+                  .sort((a, b) => b.length - a.length)
+                  .filter(term => term.trim() !== ''); // Remove empty terms
+                
+                // Process each excluded term individually
+                for (const term of sortedExcludedTerms) {
+                  // Escape special characters in the term
+                  const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  
+                  // Create regex that matches the whole word with word boundaries
+                  const termRegex = new RegExp(`\\b${escapedTerm}\\b`, 'gi'); // Added 'i' flag for case-insensitive matching
+                  
+                  // Replace each occurrence with a unique placeholder
+                  textToTranslate = textToTranslate.replace(termRegex, (match) => {
+                    const placeholder = `[UNTRANSLATABLE_${placeholderCount}]`;
+                    placeholders[placeholder] = match; // Store the original casing
+                    placeholderCount++;
+                    console.log(`Replaced "${match}" with placeholder: ${placeholder}`);
+                    return placeholder;
+                  });
+                }
+                
+                console.log('Text to be translated (with placeholders):', textToTranslate);
+                console.log('Placeholder mappings:', placeholders);
+              }
+              
+              // Translate the modified text
+              let translatedText = await translateText(textToTranslate, targetLang);
+              console.log('Raw translation result:', translatedText);
+              
+              // Restore excluded terms
+              if (Object.keys(placeholders).length > 0) {
+                // Sort placeholders by length (longest first) to avoid partial replacements
+                const sortedPlaceholders = Object.entries(placeholders)
+                  .sort(([a], [b]) => b.length - a.length);
+                
+                for (const [placeholder, originalTerm] of sortedPlaceholders) {
+                  translatedText = translatedText.replace(placeholder, originalTerm);
+                  console.log(`Restored "${originalTerm}" from placeholder: ${placeholder}`);
+                }
+                
+                console.log('Final translation with restored terms:', translatedText);
+              }
+              
               textNode.characters = translatedText;
-              console.log(`Translated: "${originalText}" → "${translatedText}"`);
             } catch (error: any) {
               console.error(`Error translating text node:`, error);
               figma.notify(`Error translating text: ${error.message}`, { error: true });
@@ -267,7 +308,6 @@ figma.ui.onmessage = async (msg) => {
       }
     }
 
-    // Update translated frames count and status display
     if (!isSubscribed) {
       await figma.clientStorage.setAsync('translatedFramesCount', translatedFramesCount + selectedFrames.length);
     }
@@ -283,31 +323,25 @@ figma.ui.onmessage = async (msg) => {
   } else if (msg.type === 'subscribe') {
     if (figma.payments) {
       try {
-        // Show payment UI
         await figma.payments.initiateCheckoutAsync({
           interstitial: 'PAID_FEATURE'
         });
 
-        // Check if user completed payment
         if (figma.payments.status.type === 'PAID') {
           figma.notify('Thank you for subscribing!');
-          // Reset credits when user subscribes
           await figma.clientStorage.setAsync('translatedFramesCount', 0);
-          // Update UI with new status
           await updateStatusDisplay();
         } else {
-          // User closed the payment popup without subscribing
           figma.notify('Subscription cancelled', { error: true });
-          // Make sure we update UI to show user is not subscribed
           await updateStatusDisplay();
         }
       } catch (error) {
-        // Handle any errors during subscription process
         console.error('Subscription error:', error);
         figma.notify('Subscription cancelled', { error: true });
-        // Make sure we update UI to show user is not subscribed
         await updateStatusDisplay();
       }
     }
+  } else if (msg.type === 'updateExcludedTerms') {
+    excludedTerms = msg.terms;
   }
 };
