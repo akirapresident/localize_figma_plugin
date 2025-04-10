@@ -47,11 +47,15 @@
     select[multiple] {
       height: 200px;
       padding: 0;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
     }
 
     select[multiple] option {
       padding: 12px;
       border-bottom: 1px solid var(--figma-color-border);
+      cursor: pointer;
     }
 
     select[multiple] option:last-child {
@@ -59,8 +63,12 @@
     }
 
     select[multiple] option:checked {
-      background: var(--figma-color-bg-brand);
-      color: var(--figma-color-text-onbrand);
+      background: #007AFF;
+      color: white;
+    }
+
+    select[multiple] option:not(:checked):hover {
+      background: rgba(0, 122, 255, 0.1);
     }
 
     .button {
@@ -220,7 +228,7 @@
 
     <div class="input-group">
       <label for="targetLang">Select Languages</label>
-      <div class="help-text">Hold ⌘ (Mac) or Ctrl (Windows) to select multiple languages</div>
+      <div class="help-text">Click to select/deselect languages</div>
       <select id="targetLang" multiple>
         <option value="ar">Arabic</option>
         <option value="hy-AM">Armenian</option>
@@ -301,6 +309,16 @@
     let currentTextCount = 0;
     let isSubscribed = false;
     let remainingCredits = 2;
+
+    // Custom click handler for language selection
+    targetLangSelect.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const option = e.target;
+      if (option.tagName === 'OPTION') {
+        option.selected = !option.selected;
+        updateButtonState();
+      }
+    });
 
     // Request initial subscription status and credits
     parent.postMessage({ 
