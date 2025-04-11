@@ -49,6 +49,9 @@ async function translateText(text: string, targetLang: string): Promise<string> 
   try {
     console.log(`Starting translation to ${targetLang}: "${text}"`);
     
+    // Check if the text contains any placeholders
+    const hasPlaceholders = /\[UNTRANSLATABLE_\d+\]/.test(text);
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -60,10 +63,26 @@ async function translateText(text: string, targetLang: string): Promise<string> 
         messages: [
           {
             role: "system",
-            content: `You are a translator. Translate the following text to ${targetLang}. 
-            CRITICAL: Any token in the format [UNTRANSLATABLE_123] MUST remain exactly as is.
-            Only translate the parts that are not in [UNTRANSLATABLE_X] format.
-            Respond only with the translation, no explanations or additional text.`
+            content: hasPlaceholders 
+              ? `You are a translator. Your task is to translate text while preserving specific placeholders.
+
+IMPORTANT RULES:
+1. ONLY preserve placeholders that are already in the input text
+2. DO NOT add any new placeholders to the translation
+3. Any text in the format [UNTRANSLATABLE_X] (where X is a number) MUST be kept EXACTLY as is in the translation
+4. DO NOT translate or modify these placeholders in any way
+5. The placeholders should appear in the same position in the translated text
+
+Examples:
+- Input: "[UNTRANSLATABLE_0] your designs"
+- Output: "[UNTRANSLATABLE_0] seus designs"
+
+- Input: "Create [UNTRANSLATABLE_1] designs"
+- Output: "Criar [UNTRANSLATABLE_1] designs"
+
+Now translate the following text to ${targetLang}. Remember to ONLY preserve placeholders that are already in the input text.`
+              : `You are a translator. Translate the following text to ${targetLang}. 
+                 Respond only with the translation, no explanations or additional text.`
           },
           {
             role: "user",
@@ -97,7 +116,7 @@ async function translateText(text: string, targetLang: string): Promise<string> 
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 600 });
+figma.showUI(__html__, { width: 400, height: 550 });
 
 // Initial check for selected frames and status
 updateTextCount();
@@ -258,13 +277,13 @@ figma.ui.onmessage = async (msg) => {
                   // Escape special characters in the term
                   const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                   
-                  // Create regex that matches the whole word with word boundaries
-                  const termRegex = new RegExp(`\\b${escapedTerm}\\b`, 'gi'); // Added 'i' flag for case-insensitive matching
+                  // Create regex that matches the exact word, case-sensitive, with word boundaries
+                  const termRegex = new RegExp(`\\b${escapedTerm}\\b`, 'g');
                   
                   // Replace each occurrence with a unique placeholder
                   textToTranslate = textToTranslate.replace(termRegex, (match) => {
                     const placeholder = `[UNTRANSLATABLE_${placeholderCount}]`;
-                    placeholders[placeholder] = match; // Store the original casing
+                    placeholders[placeholder] = match; // Store the original text exactly as is
                     placeholderCount++;
                     console.log(`Replaced "${match}" with placeholder: ${placeholder}`);
                     return placeholder;
@@ -286,8 +305,11 @@ figma.ui.onmessage = async (msg) => {
                   .sort(([a], [b]) => b.length - a.length);
                 
                 for (const [placeholder, originalTerm] of sortedPlaceholders) {
-                  translatedText = translatedText.replace(placeholder, originalTerm);
-                  console.log(`Restored "${originalTerm}" from placeholder: ${placeholder}`);
+                  // Only restore if the placeholder exists in the translated text
+                  if (translatedText.includes(placeholder)) {
+                    translatedText = translatedText.replace(placeholder, originalTerm);
+                    console.log(`Restored "${originalTerm}" from placeholder: ${placeholder}`);
+                  }
                 }
                 
                 console.log('Final translation with restored terms:', translatedText);
