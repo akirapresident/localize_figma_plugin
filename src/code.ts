@@ -263,7 +263,7 @@ figma.ui.onmessage = async (msg) => {
         const targetLang = targetLangs[i];
         try {
           const clonedFrame = frame.clone() as FrameNode;
-          clonedFrame.name = `${frame.name} (${targetLang})`;
+          clonedFrame.name = `$(${targetLang}){frame.name}`;
           clonedFrame.x = frame.x;
           
           if (frame === selectedFrames[0]) {
