@@ -157,7 +157,7 @@ async function asyncPool<T, R>(poolLimit: number, array: T[], iteratorFn: (item:
 }
 
 // Show the UI
-figma.showUI(__html__, { width: 400, height: 550 });
+figma.showUI(__html__, { width: 400, height: 600 });
 
 // Initial check for selected frames and status
 updateTextCount();
