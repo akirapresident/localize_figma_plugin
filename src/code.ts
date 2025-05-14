@@ -134,6 +134,25 @@ Now translate the following text to ${targetLang}. Remember to ONLY preserve pla
   }
 }
 
+// Helper to run async tasks with concurrency limit
+async function asyncPool<T, R>(poolLimit: number, array: T[], iteratorFn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const ret: R[] = [];
+  const executing: Promise<void>[] = [];
+  for (let i = 0; i < array.length; i++) {
+    const p = Promise.resolve().then(() => iteratorFn(array[i], i)).then(res => { ret[i] = res });
+    executing.push(p);
+    if (executing.length >= poolLimit) {
+      await Promise.race(executing);
+      // Remove resolved promises
+      for (let j = executing.length - 1; j >= 0; j--) {
+        executing.splice(j, 1);
+      }
+    }
+  }
+  await Promise.all(executing);
+  return ret;
+}
+
 // Show the UI
 figma.showUI(__html__, { width: 400, height: 550 });
 
@@ -264,9 +283,10 @@ figma.ui.onmessage = async (msg) => {
           }
           findTextNodesInClone(clonedFrame);
           
-          for (const textNode of clonedTextNodes) {
+          // Translate all text nodes in parallel with concurrency limit
+          await asyncPool(8, clonedTextNodes, async (textNode) => {
             const originalText = textNode.characters;
-            if (!originalText.trim()) continue;
+            if (!originalText.trim()) return;
             
             try {
               const fontNames = textNode.getRangeAllFontNames(0, textNode.characters.length);
@@ -349,7 +369,7 @@ figma.ui.onmessage = async (msg) => {
               figma.notify(`Error translating text: ${error.message}`, { error: true });
               hasErrors = true;
             }
-          }
+          });
         } catch (error: any) {
           console.error(`Error translating to ${targetLang}:`, error);
           figma.notify(`Error translating to ${targetLang}: ${error.message}`, { error: true });
