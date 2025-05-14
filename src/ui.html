@@ -376,6 +376,48 @@
       position: relative;
       width: 100%;
     }
+
+    .select-actions-dropdown {
+      position: relative;
+      display: inline-block;
+    }
+    .dropdown-menu {
+      margin-top: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      min-width: 180px;
+      padding: 4px 0;
+      display: none;
+      right: 0;
+      left: auto;
+      position: absolute;
+      z-index: 10;
+    }
+    .dropdown-item {
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #222;
+      transition: background 0.15s;
+    }
+    .dropdown-item:hover {
+      background: #f0f0f0;
+    }
+    .select-all-btn {
+      background: none;
+      border: none;
+      color: #007AFF;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .select-all-btn:focus {
+      outline: none;
+      background: #f0f0f0;
+    }
   </style>
 </head>
 <body>
@@ -394,7 +436,14 @@
     <div class="input-group">
       <div class="input-group-header">
         <label for="targetLang">Target Languages</label>
-        <button id="selectAllBtn" class="select-all-btn">Select All</button>
+        <div class="select-actions-dropdown" id="selectActionsDropdown">
+          <button id="selectActionsBtn" class="select-all-btn">Select ▼</button>
+          <div id="selectActionsMenu" class="dropdown-menu" style="display:none;position:absolute;z-index:10;background:white;border:1px solid #ccc;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.08);min-width:160px;">
+            <div class="dropdown-item" data-action="selectAll">Select All</div>
+            <div class="dropdown-item" data-action="unselectAll">Unselect All</div>
+            <div class="dropdown-item" data-action="appstore">App/Play Store Languages</div>
+          </div>
+        </div>
       </div>
       <div class="section">
         <div class="search-container">
@@ -459,6 +508,36 @@
           <div class="language-option" data-value="uk">Ukrainian</div>
           <div class="language-option" data-value="ur">Urdu</div>
           <div class="language-option" data-value="vi">Vietnamese</div>
+          <div class="language-option" data-value="af">Afrikaans</div>
+          <div class="language-option" data-value="sq">Albanian</div>
+          <div class="language-option" data-value="am">Amharic</div>
+          <div class="language-option" data-value="az-AZ">Azerbaijani</div>
+          <div class="language-option" data-value="be">Belarusian</div>
+          <div class="language-option" data-value="my-MM">Burmese</div>
+          <div class="language-option" data-value="en">English</div>
+          <div class="language-option" data-value="en-US">English (U.S.) Primary</div>
+          <div class="language-option" data-value="fil">Filipino</div>
+          <div class="language-option" data-value="gl-ES">Galician</div>
+          <div class="language-option" data-value="ka-GE">Georgian</div>
+          <div class="language-option" data-value="is-IS">Icelandic</div>
+          <div class="language-option" data-value="kk">Kazakh</div>
+          <div class="language-option" data-value="km-KH">Khmer</div>
+          <div class="language-option" data-value="ky-KG">Kyrgyz</div>
+          <div class="language-option" data-value="lo-LA">Lao</div>
+          <div class="language-option" data-value="lv">Latvian</div>
+          <div class="language-option" data-value="mk-MK">Macedonian</div>
+          <div class="language-option" data-value="ml-IN">Malayalam</div>
+          <div class="language-option" data-value="mr-IN">Marathi</div>
+          <div class="language-option" data-value="mn-MN">Mongolian</div>
+          <div class="language-option" data-value="ne-NP">Nepali</div>
+          <div class="language-option" data-value="fa-IR">Persian (Iran)</div>
+          <div class="language-option" data-value="rm">Romansh</div>
+          <div class="language-option" data-value="ru-RU">Russian (RU)</div>
+          <div class="language-option" data-value="si-LK">Sinhala</div>
+          <div class="language-option" data-value="sr">Serbian</div>
+          <div class="language-option" data-value="sw">Swahili</div>
+          <div class="language-option" data-value="es-MX">Spanish (Mexico)</div>
+          <div class="language-option" data-value="zu">Zulu</div>
         </div>
         <div id="langError" class="error"></div>
         <div class="help-text" id="langCounter">0 languages selected</div>
@@ -581,18 +660,47 @@
         .map(option => option.dataset.value);
     }
 
-    // Update the Select All button functionality
-    selectAllBtn.addEventListener('click', () => {
-      const options = targetLangSelect.querySelectorAll('.language-option');
-      const allSelected = Array.from(options).every(option => option.classList.contains('selected'));
-      
-      options.forEach(option => {
-        option.classList.toggle('selected', !allSelected);
-      });
-      
-      updateButtonState();
-      selectAllBtn.textContent = allSelected ? 'Select All' : 'Deselect All';
+    // Dropdown logic
+    const selectActionsBtn = document.getElementById('selectActionsBtn');
+    const selectActionsMenu = document.getElementById('selectActionsMenu');
+    selectActionsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectActionsMenu.style.display = selectActionsMenu.style.display === 'none' ? 'block' : 'none';
     });
+    document.addEventListener('click', () => {
+      selectActionsMenu.style.display = 'none';
+    });
+    selectActionsMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = e.target.getAttribute('data-action');
+      if (!action) return;
+      if (action === 'selectAll') {
+        setAllLanguagesSelected(true);
+      } else if (action === 'unselectAll') {
+        setAllLanguagesSelected(false);
+      } else if (action === 'appstore') {
+        selectAppStoreLanguages();
+      }
+      selectActionsMenu.style.display = 'none';
+      updateButtonState();
+    });
+    function setAllLanguagesSelected(selected) {
+      const options = targetLangSelect.querySelectorAll('.language-option');
+      options.forEach(option => {
+        option.classList.toggle('selected', selected);
+      });
+    }
+    // Hardcoded App/Play Store language codes (union of both stores, matching dropdown data-value)
+    const appStorePlayStoreCodes = [
+      'af','sq','am','ar','hy-AM','az-AZ','bn-BD','eu-ES','be','bg','my-MM','ca','zh-HK','zh-CN','zh-TW','hr','cs-CZ','da-DK','nl-NL','en','en-AU','en-CA','en-GB','en-IN','en-US','et','fil','fi-FI','fr','fr-CA','fr-FR','gl-ES','ka-GE','de-DE','el-GR','gu','iw-IL','hi-IN','hu-HU','is-IS','id','it-IT','ja-JP','kn-IN','kk','km-KH','ko-KR','ky-KG','lo-LA','lv','lt','mk-MK','ms','ms-MY','ml-IN','mr-IN','mn-MN','ne-NP','no-NO','fa','fa-IR','pl-PL','pt-BR','pt-PT','pa','ro','rm','ru','ru-RU','sr','si-LK','sk','sl','es-419','es-MX','es-ES','es-US','sw','sv-SE','ta-IN','te-IN','th','tr-TR','uk','ur','vi','zu'
+    ];
+    function selectAppStoreLanguages() {
+      const options = targetLangSelect.querySelectorAll('.language-option');
+      options.forEach(option => {
+        const code = option.getAttribute('data-value');
+        option.classList.toggle('selected', appStorePlayStoreCodes.includes(code));
+      });
+    }
 
     // Update the translate button click handler
     translateBtn.onclick = async () => {
