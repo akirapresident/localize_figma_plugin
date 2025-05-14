@@ -553,11 +553,14 @@
       langCounter.textContent = `${selectedLangs.length} language${selectedLangs.length !== 1 ? 's' : ''} selected`;
       
       // Update button state based on subscription, credits, and selection
+      /*
+      // PAYWALL DISABLED FOR TESTING - uncomment to re-enable
       if (!isSubscribed && remainingCredits === 0) {
         translateBtn.textContent = 'Subscribe Now!';
         translateBtn.disabled = false;
         translateBtn.classList.add('subscribe');
       } else {
+      */
         translateBtn.classList.remove('subscribe');
         if (!hasSelectedLanguages) {
           translateBtn.textContent = 'Select languages';
@@ -569,7 +572,7 @@
           translateBtn.textContent = `Translate ${currentTextCount} Text Node${currentTextCount !== 1 ? 's' : ''}`;
           translateBtn.disabled = false;
         }
-      }
+      //}
     }
 
     // Update the getSelectedLanguages function
@@ -594,8 +597,8 @@
     // Update the translate button click handler
     translateBtn.onclick = async () => {
       const selectedLangs = getSelectedLanguages();
-      
-      // If not subscribed and no credits, initiate subscription
+      /*
+      // PAYWALL DISABLED FOR TESTING - uncomment to re-enable
       if (!isSubscribed && remainingCredits === 0) {
         parent.postMessage({ 
           pluginMessage: { 
@@ -604,6 +607,7 @@
         }, '*');
         return;
       }
+      */
       
       // Reset errors
       langError.textContent = '';

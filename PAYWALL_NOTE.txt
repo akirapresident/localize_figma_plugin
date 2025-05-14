@@ -1,0 +1,17 @@
+Paywall/Subscription Wall - Re-enable Instructions
+===============================================
+
+To re-enable the paywall/subscription wall for your Figma plugin, you need to uncomment the following code blocks:
+
+1. **Backend (src/code.ts):**
+   - Uncomment the block in the translate handler that checks for subscription status and credits.
+   - The block is marked with:
+     // PAYWALL DISABLED FOR TESTING - uncomment to re-enable
+
+2. **Frontend/UI (src/ui.html):**
+   - Uncomment the block in the `updateButtonState` function that changes the button to 'Subscribe Now!' and disables translation when not subscribed.
+   - Uncomment the block in the `translateBtn.onclick` handler that triggers the subscribe flow if not subscribed and out of credits.
+   - Both blocks are marked with:
+     // PAYWALL DISABLED FOR TESTING - uncomment to re-enable
+
+After uncommenting these blocks, the paywall will be active again for users who are not subscribed or out of credits. 

@@ -45,6 +45,25 @@ async function updateStatusDisplay() {
   });
 }
 
+// Function to preserve numbers in text
+function preserveNumbers(text: string): { text: string, placeholders: {[key: string]: string} } {
+  const placeholders: {[key: string]: string} = {};
+  let placeholderCount = 0;
+  // Match numbers (including decimals and negative numbers)
+  const numberRegex = /-?\d+(\.\d+)?/g;
+  // Replace numbers with placeholders
+  const textWithPlaceholders = text.replace(numberRegex, (match) => {
+    const placeholder = `[UNTRANSLATABLE_${placeholderCount}]`;
+    placeholders[placeholder] = match;
+    placeholderCount++;
+    return placeholder;
+  });
+  return {
+    text: textWithPlaceholders,
+    placeholders
+  };
+}
+
 async function translateText(text: string, targetLang: string): Promise<string> {
   try {
     console.log(`Starting translation to ${targetLang}: "${text}"`);
@@ -169,6 +188,8 @@ figma.ui.onmessage = async (msg) => {
     const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
     const isSubscribed = figma.payments?.status.type === 'PAID';
 
+    /*
+    // PAYWALL DISABLED FOR TESTING - uncomment to re-enable
     if (!isSubscribed && remainingCredits === 0) {
       if (!figma.payments) {
         figma.notify('Payment system not available', { error: true });
@@ -192,6 +213,7 @@ figma.ui.onmessage = async (msg) => {
         return;
       }
     }
+    */
 
     let hasErrors = false;
     const firstFrameTranslationsY: number[] = [];
@@ -293,6 +315,12 @@ figma.ui.onmessage = async (msg) => {
                 console.log('Text to be translated (with placeholders):', textToTranslate);
                 console.log('Placeholder mappings:', placeholders);
               }
+              
+              // First preserve numbers
+              const { text: textWithPreservedNumbers, placeholders: numberPlaceholders } = preserveNumbers(textToTranslate);
+              textToTranslate = textWithPreservedNumbers;
+              Object.assign(placeholders, numberPlaceholders);
+              placeholderCount = Object.keys(placeholders).length;
               
               // Translate the modified text
               let translatedText = await translateText(textToTranslate, targetLang);
