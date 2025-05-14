@@ -45,32 +45,52 @@ async function updateStatusDisplay() {
   });
 }
 
-// Function to preserve numbers in text
-function preserveNumbers(text: string): { text: string, placeholders: {[key: string]: string} } {
-  const placeholders: {[key: string]: string} = {};
-  let placeholderCount = 0;
-  // Match numbers (including decimals and negative numbers)
+// Helper to replace numbers first, then excluded terms
+function replaceWithPlaceholders(text: string, excludedTerms: string[]): { text: string, placeholders: {[key: string]: string}, numberPlaceholders: {[key: string]: string} } {
+  const numberPlaceholders: {[key: string]: string} = {};
+  let numberPlaceholderCount = 0;
+  let textToTranslate = text;
+
+  // 1. Replace numbers (including decimals and negative numbers) first
   const numberRegex = /-?\d+(\.\d+)?/g;
-  // Replace numbers with placeholders
-  const textWithPlaceholders = text.replace(numberRegex, (match) => {
-    const placeholder = `[UNTRANSLATABLE_${placeholderCount}]`;
-    placeholders[placeholder] = match;
-    placeholderCount++;
+  textToTranslate = textToTranslate.replace(numberRegex, (match) => {
+    const placeholder = `[NUMBER_${numberPlaceholderCount}]`;
+    numberPlaceholders[placeholder] = match;
+    numberPlaceholderCount++;
     return placeholder;
   });
+
+  // 2. Replace excluded terms (longest first)
+  const placeholders: {[key: string]: string} = {};
+  let placeholderCount = 0;
+  if (excludedTerms && excludedTerms.length > 0) {
+    const sortedExcludedTerms = [...excludedTerms]
+      .sort((a, b) => b.length - a.length)
+      .filter(term => term.trim() !== '');
+    for (const term of sortedExcludedTerms) {
+      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const termRegex = new RegExp(`\\b${escapedTerm}\\b`, 'g');
+      textToTranslate = textToTranslate.replace(termRegex, (match) => {
+        const placeholder = `[UNTRANSLATABLE_${placeholderCount}]`;
+        placeholders[placeholder] = match;
+        placeholderCount++;
+        return placeholder;
+      });
+    }
+  }
+
   return {
-    text: textWithPlaceholders,
-    placeholders
+    text: textToTranslate,
+    placeholders,
+    numberPlaceholders
   };
 }
 
 async function translateText(text: string, targetLang: string): Promise<string> {
   try {
     console.log(`Starting translation to ${targetLang}: "${text}"`);
-    
     // Check if the text contains any placeholders
-    const hasPlaceholders = /\[UNTRANSLATABLE_\d+\]/.test(text);
-    
+    const hasPlaceholders = /\[UNTRANSLATABLE_\d+\]|\[NUMBER_\d+\]/.test(text);
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -83,25 +103,8 @@ async function translateText(text: string, targetLang: string): Promise<string> 
           {
             role: "system",
             content: hasPlaceholders 
-              ? `You are a translator. Your task is to translate text while preserving specific placeholders.
-
-IMPORTANT RULES:
-1. ONLY preserve placeholders that are already in the input text
-2. DO NOT add any new placeholders to the translation
-3. Any text in the format [UNTRANSLATABLE_X] (where X is a number) MUST be kept EXACTLY as is in the translation
-4. DO NOT translate or modify these placeholders in any way
-5. The placeholders should appear in the same position in the translated text
-
-Examples:
-- Input: "[UNTRANSLATABLE_0] your designs"
-- Output: "[UNTRANSLATABLE_0] seus designs"
-
-- Input: "Create [UNTRANSLATABLE_1] designs"
-- Output: "Criar [UNTRANSLATABLE_1] designs"
-
-Now translate the following text to ${targetLang}. Remember to ONLY preserve placeholders that are already in the input text.`
-              : `You are a translator. Translate the following text to ${targetLang}. 
-                 Respond only with the translation, no explanations or additional text.`
+              ? `You are a translator. Your task is to translate text while preserving specific placeholders.\n\nIMPORTANT RULES:\n1. ONLY preserve placeholders that are already in the input text\n2. DO NOT add any new placeholders to the translation\n3. Any text in the format [UNTRANSLATABLE_X] or [NUMBER_X] (where X is a number) MUST be kept EXACTLY as is in the translation\n4. DO NOT translate, modify, or change these placeholders in any way, including their brackets, underscores, or capitalization\n5. The placeholders should appear in the same position in the translated text\n6. If you see a placeholder like [UNTRANSLATABLE_X] or [NUMBER_X], you must keep it exactly as is, including all brackets and underscores, and do not translate or change it in any way\n\nExamples:\n- Input: "[UNTRANSLATABLE_0] your designs"\n- Output: "[UNTRANSLATABLE_0] seus designs"\n\n- Input: "Create [UNTRANSLATABLE_1] designs"\n- Output: "Criar [UNTRANSLATABLE_1] designs"\n\n- Input: "You have [NUMBER_0] new messages"\n- Output: "Você tem [NUMBER_0] novas mensagens"\n\nNow translate the following text to ${targetLang}. Remember to ONLY preserve placeholders that are already in the input text.`
+              : `You are a translator. Translate the following text to ${targetLang}. \nRespond only with the translation, no explanations or additional text.`
           },
           {
             role: "user",
@@ -301,66 +304,19 @@ figma.ui.onmessage = async (msg) => {
               figma.notify(`Translating to ${languageName}...`);
               
               // Check if the text contains any excluded terms
-              let textToTranslate = originalText;
-              const placeholders: {[key: string]: string} = {};
-              let placeholderCount = 0;
-              
-              if (excludedTerms && excludedTerms.length > 0) {
-                console.log('Original text:', originalText);
-                console.log('Excluded terms to preserve:', excludedTerms);
-                
-                // Sort excluded terms by length (longest first) to avoid partial matches
-                const sortedExcludedTerms = [...excludedTerms]
-                  .sort((a, b) => b.length - a.length)
-                  .filter(term => term.trim() !== ''); // Remove empty terms
-                
-                // Process each excluded term individually
-                for (const term of sortedExcludedTerms) {
-                  // Escape special characters in the term
-                  const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                  
-                  // Create regex that matches the exact word, case-sensitive, with word boundaries
-                  const termRegex = new RegExp(`\\b${escapedTerm}\\b`, 'g');
-                  
-                  // Replace each occurrence with a unique placeholder
-                  textToTranslate = textToTranslate.replace(termRegex, (match) => {
-                    const placeholder = `[UNTRANSLATABLE_${placeholderCount}]`;
-                    placeholders[placeholder] = match; // Store the original text exactly as is
-                    placeholderCount++;
-                    console.log(`Replaced "${match}" with placeholder: ${placeholder}`);
-                    return placeholder;
-                  });
-                }
-                
-                console.log('Text to be translated (with placeholders):', textToTranslate);
-                console.log('Placeholder mappings:', placeholders);
-              }
-              
-              // First preserve numbers
-              const { text: textWithPreservedNumbers, placeholders: numberPlaceholders } = preserveNumbers(textToTranslate);
-              textToTranslate = textWithPreservedNumbers;
-              Object.assign(placeholders, numberPlaceholders);
-              placeholderCount = Object.keys(placeholders).length;
+              let { text: textToTranslate, placeholders, numberPlaceholders } = replaceWithPlaceholders(originalText, excludedTerms);
               
               // Translate the modified text
               let translatedText = await translateText(textToTranslate, targetLang);
               console.log('Raw translation result:', translatedText);
               
-              // Restore excluded terms
-              if (Object.keys(placeholders).length > 0) {
-                // Sort placeholders by length (longest first) to avoid partial replacements
-                const sortedPlaceholders = Object.entries(placeholders)
-                  .sort(([a], [b]) => b.length - a.length);
-                
-                for (const [placeholder, originalTerm] of sortedPlaceholders) {
-                  // Only restore if the placeholder exists in the translated text
-                  if (translatedText.includes(placeholder)) {
-                    translatedText = translatedText.replace(placeholder, originalTerm);
-                    console.log(`Restored "${originalTerm}" from placeholder: ${placeholder}`);
-                  }
-                }
-                
-                console.log('Final translation with restored terms:', translatedText);
+              // Restore excluded terms first
+              for (const [placeholder, originalTerm] of Object.entries(placeholders)) {
+                translatedText = translatedText.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), originalTerm);
+              }
+              // Restore numbers
+              for (const [placeholder, originalNumber] of Object.entries(numberPlaceholders)) {
+                translatedText = translatedText.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), originalNumber);
               }
               
               textNode.characters = translatedText;
