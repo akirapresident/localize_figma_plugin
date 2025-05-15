@@ -263,7 +263,8 @@ figma.ui.onmessage = async (msg) => {
         const targetLang = targetLangs[i];
         try {
           const clonedFrame = frame.clone() as FrameNode;
-          clonedFrame.name = `$(${targetLang}){frame.name}`;
+          const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
+          clonedFrame.name = `(${targetLang} - ${languageName}) ${frame.name}`;
           clonedFrame.x = frame.x;
           
           if (frame === selectedFrames[0]) {
@@ -300,7 +301,6 @@ figma.ui.onmessage = async (msg) => {
                 figma.notify('⚠️ Some fonts could not be loaded. Please temporarily change the font to Roboto or Inter, then change it back after translation.', { timeout: 10000 });
               }
               
-              const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
               figma.notify(`Translating to ${languageName}...`);
               
               // Check if the text contains any excluded terms
