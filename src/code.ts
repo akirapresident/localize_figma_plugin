@@ -11,7 +11,8 @@ const languages = [
   { name: "Chinese (Simplified)", code: "zh-CN" },
   { name: "Chinese (Traditional)", code: "zh-TW" },
   { name: "Russian", code: "ru" },
-  { name: "Arabic", code: "ar" }
+  { name: "Arabic", code: "ar" },
+  { name: "Thai", code: "th" }
 ];
 
 // Store the API key directly in the code
@@ -31,6 +32,9 @@ type TranslationResponse = {
 
 // Add excluded terms storage at the top with other constants
 let excludedTerms: string[] = [];
+
+// Add this constant at the top with other constants
+const BATCH_SIZE = 10; // Number of texts to translate in one API call
 
 // Function to update status display
 async function updateStatusDisplay() {
@@ -86,11 +90,23 @@ function replaceWithPlaceholders(text: string, excludedTerms: string[]): { text:
   };
 }
 
-async function translateText(text: string, targetLang: string): Promise<string> {
+// Add this new function after the translateText function
+async function translateBatch(texts: string[], targetLang: string): Promise<string[]> {
   try {
-    console.log(`Starting translation to ${targetLang}: "${text}"`);
-    // Check if the text contains any placeholders
-    const hasPlaceholders = /\[UNTRANSLATABLE_\d+\]|\[NUMBER_\d+\]/.test(text);
+    console.log(`Starting batch translation to ${targetLang} for ${texts.length} texts`);
+    
+    // Create a batch of texts with their indices
+    const batchWithIndices = texts.map((text, index) => ({
+      index,
+      text,
+      hasPlaceholders: /\[UNTRANSLATABLE_\d+\]|\[NUMBER_\d+\]/.test(text)
+    }));
+
+    console.log("[DEBUG] targetLang antes do batch:", targetLang);
+    if (!languages.find(lang => lang.code === targetLang)) {
+      throw new Error(`[ERRO] Idioma não suportado: ${targetLang}`);
+    }
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -102,17 +118,24 @@ async function translateText(text: string, targetLang: string): Promise<string> 
         messages: [
           {
             role: "system",
-            content: hasPlaceholders 
-              ? `You are a translator. Your task is to translate text while preserving specific placeholders.\n\nIMPORTANT RULES:\n1. ONLY preserve placeholders that are already in the input text\n2. DO NOT add any new placeholders to the translation\n3. Any text in the format [UNTRANSLATABLE_X] or [NUMBER_X] (where X is a number) MUST be kept EXACTLY as is in the translation\n4. DO NOT translate, modify, or change these placeholders in any way, including their brackets, underscores, or capitalization\n5. The placeholders should appear in the same position in the translated text\n6. If you see a placeholder like [UNTRANSLATABLE_X] or [NUMBER_X], you must keep it exactly as is, including all brackets and underscores, and do not translate or change it in any way\n\nExamples:\n- Input: "[UNTRANSLATABLE_0] your designs"\n- Output: "[UNTRANSLATABLE_0] seus designs"\n\n- Input: "Create [UNTRANSLATABLE_1] designs"\n- Output: "Criar [UNTRANSLATABLE_1] designs"\n\n- Input: "You have [NUMBER_0] new messages"\n- Output: "Você tem [NUMBER_0] novas mensagens"\n\nNow translate the following text to ${targetLang}. Remember to ONLY preserve placeholders that are already in the input text.`
-              : `You are a translator. Translate the following text to ${targetLang}. \nRespond only with the translation, no explanations or additional text.`
+            content: `You are a translator. Translate the following texts to ${targetLang}.
+IMPORTANT RULES:
+1. Preserve all placeholders in the format [UNTRANSLATABLE_X] or [NUMBER_X]
+2. Return translations as a JSON array of strings
+3. Keep the exact same order as the input
+4. Do not add any explanations or additional text
+
+Example input:
+["Hello [UNTRANSLATABLE_0]", "You have [NUMBER_0] messages"]
+`
           },
           {
             role: "user",
-            content: text
+            content: JSON.stringify(texts)
           }
         ],
         temperature: 0.1,
-        max_tokens: 1000
+        max_tokens: 2000
       })
     });
 
@@ -128,13 +151,22 @@ async function translateText(text: string, targetLang: string): Promise<string> 
       throw new Error('Invalid API response format');
     }
 
-    const translatedText = data.choices[0].message.content.trim();
-    console.log(`Translation result: "${translatedText}"`);
-    return translatedText;
+    console.log("[DEBUG] Resposta da OpenAI:", data);
+
+    const translatedTexts = JSON.parse(data.choices[0].message.content) as string[];
+    console.log("[DEBUG] Traduções recebidas:", translatedTexts);
+    console.log(`Batch translation completed for ${translatedTexts.length} texts`);
+    return translatedTexts;
   } catch (error) {
-    console.error('Translation error:', error);
+    console.error('Batch translation error:', error);
     throw error;
   }
+}
+
+// Modify the existing translateText function to use the batch translation
+async function translateText(text: string, targetLang: string): Promise<string> {
+  const results = await translateBatch([text], targetLang);
+  return results[0];
 }
 
 // Helper to run async tasks with concurrency limit
@@ -210,57 +242,13 @@ figma.ui.onmessage = async (msg) => {
     const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
     const isSubscribed = figma.payments?.status.type === 'PAID';
 
-    /*
-    // PAYWALL DISABLED FOR TESTING - uncomment to re-enable
-    if (!isSubscribed && remainingCredits === 0) {
-      if (!figma.payments) {
-        figma.notify('Payment system not available', { error: true });
-        figma.ui.postMessage({ type: 'done' });
-        return;
-      }
-
-      try {
-        await figma.payments.initiateCheckoutAsync({
-          interstitial: 'PAID_FEATURE'
-        });
-
-        if (figma.payments.status.type === 'UNPAID') {
-          figma.notify('Please subscribe to continue translating frames', { error: true });
-          figma.ui.postMessage({ type: 'done' });
-          return;
-        }
-      } catch (error) {
-        figma.notify('Please subscribe to continue translating frames', { error: true });
-        figma.ui.postMessage({ type: 'done' });
-        return;
-      }
-    }
-    */
-
     let hasErrors = false;
     const firstFrameTranslationsY: number[] = [];
     
     // Process each selected frame
     for (const frame of selectedFrames) {
-      const textNodes: TextNode[] = [];
-      function findTextNodes(node: SceneNode) {
-        if (node.type === 'TEXT') {
-          textNodes.push(node);
-        } else if ('children' in node) {
-          for (const child of node.children) {
-            findTextNodes(child);
-          }
-        }
-      }
-      findTextNodes(frame);
-      
-      if (textNodes.length === 0) {
-        figma.notify(`No text nodes found in frame "${frame.name}"`, { error: true });
-        continue;
-      }
-
-      for (let i = 0; i < targetLangs.length; i++) {
-        const targetLang = targetLangs[i];
+      // Process each target language
+      for (const targetLang of targetLangs) {
         try {
           const clonedFrame = frame.clone() as FrameNode;
           const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
@@ -268,81 +256,103 @@ figma.ui.onmessage = async (msg) => {
           clonedFrame.x = frame.x;
           
           if (frame === selectedFrames[0]) {
-            const y = frame.y + frame.height + 50 + (i * (frame.height + 50));
+            const y = frame.y + frame.height + 50 + (targetLangs.indexOf(targetLang) * (frame.height + 50));
             clonedFrame.y = y;
             firstFrameTranslationsY.push(y);
           } else {
-            clonedFrame.y = firstFrameTranslationsY[i];
+            clonedFrame.y = firstFrameTranslationsY[targetLangs.indexOf(targetLang)];
           }
-          
-          const clonedTextNodes: TextNode[] = [];
-          function findTextNodesInClone(node: SceneNode) {
+
+          // Find all text nodes in the cloned frame
+          const textNodes: TextNode[] = [];
+          function findTextNodes(node: SceneNode) {
             if (node.type === 'TEXT') {
-              clonedTextNodes.push(node);
+              // Only add non-empty text nodes
+              if (node.characters.trim()) {
+                textNodes.push(node);
+              }
             } else if ('children' in node) {
               for (const child of node.children) {
-                findTextNodesInClone(child);
+                findTextNodes(child);
               }
             }
           }
-          findTextNodesInClone(clonedFrame);
-          
-          // Translate all text nodes in parallel with concurrency limit
-          await asyncPool(8, clonedTextNodes, async (textNode) => {
-            const originalText = textNode.characters;
-            if (!originalText.trim()) return;
-            
-            try {
-              const fontNames = textNode.getRangeAllFontNames(0, textNode.characters.length);
+          findTextNodes(clonedFrame);
+
+          if (textNodes.length === 0) {
+            console.log(`No text nodes found in frame "${clonedFrame.name}"`);
+            continue;
+          }
+
+          // Create batches of text nodes
+          const batches: TextNode[][] = [];
+          for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
+            batches.push(textNodes.slice(i, i + BATCH_SIZE));
+          }
+
+          // Process each batch
+          for (const batch of batches) {
+            // Prepare texts for translation
+            const textsToTranslate = batch.map(node => {
+              const { text, placeholders, numberPlaceholders } = replaceWithPlaceholders(node.characters, excludedTerms);
+              return text;
+            });
+
+            console.log("[DEBUG] Batch de textos:", textsToTranslate);
+
+            // Translate the batch
+            const translatedTexts = await translateBatch(textsToTranslate, targetLang);
+
+            // Update the text nodes with translations
+            for (let i = 0; i < batch.length; i++) {
+              const node = batch[i];
+              const translatedText = translatedTexts[i];
+              
               try {
-                await Promise.all(fontNames.map(figma.loadFontAsync));
-              } catch (fontError: any) {
-                console.warn(`Font loading error: ${fontError.message}`);
-                figma.notify('⚠️ Some fonts could not be loaded. Please temporarily change the font to Roboto or Inter, then change it back after translation.', { timeout: 10000 });
+                // Load the font first
+                await figma.loadFontAsync(node.fontName as FontName);
+                
+                // Restore placeholders
+                let finalText = translatedText;
+                const { placeholders, numberPlaceholders } = replaceWithPlaceholders(node.characters, excludedTerms);
+                
+                // Restore number placeholders
+                Object.entries(numberPlaceholders).forEach(([placeholder, value]) => {
+                  finalText = finalText.replace(placeholder, value);
+                });
+                
+                // Restore excluded terms
+                Object.entries(placeholders).forEach(([placeholder, value]) => {
+                  finalText = finalText.replace(placeholder, value);
+                });
+
+                // Update the text node
+                node.characters = finalText;
+              } catch (error: any) {
+                console.error(`Error updating text node:`, error);
+                figma.notify(`Error updating text: ${error.message}`, { error: true });
+                hasErrors = true;
               }
-              
-              figma.notify(`Translating to ${languageName}...`);
-              
-              // Check if the text contains any excluded terms
-              let { text: textToTranslate, placeholders, numberPlaceholders } = replaceWithPlaceholders(originalText, excludedTerms);
-              
-              // Translate the modified text
-              let translatedText = await translateText(textToTranslate, targetLang);
-              console.log('Raw translation result:', translatedText);
-              
-              // Restore excluded terms first
-              for (const [placeholder, originalTerm] of Object.entries(placeholders)) {
-                translatedText = translatedText.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), originalTerm);
-              }
-              // Restore numbers
-              for (const [placeholder, originalNumber] of Object.entries(numberPlaceholders)) {
-                translatedText = translatedText.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), originalNumber);
-              }
-              
-              textNode.characters = translatedText;
-            } catch (error: any) {
-              console.error(`Error translating text node:`, error);
-              figma.notify(`Error translating text: ${error.message}`, { error: true });
-              hasErrors = true;
             }
-          });
+          }
+
         } catch (error: any) {
           console.error(`Error translating to ${targetLang}:`, error);
-          figma.notify(`Error translating to ${targetLang}: ${error.message}`, { error: true });
           hasErrors = true;
+          figma.notify(`Error translating to ${targetLang}: ${error.message}`, { error: true });
         }
       }
     }
 
-    if (!isSubscribed) {
-      await figma.clientStorage.setAsync('translatedFramesCount', translatedFramesCount + selectedFrames.length);
-    }
-    updateStatusDisplay();
-
+    // Update translated frames count
     if (!hasErrors) {
-      figma.notify('Translation completed successfully!');
+      const newCount = translatedFramesCount + selectedFrames.length;
+      await figma.clientStorage.setAsync('translatedFramesCount', newCount);
+      updateStatusDisplay();
     }
-    
+
+    // Notify completion
+    figma.notify(hasErrors ? 'Translation completed with errors' : 'Translation completed successfully');
     figma.ui.postMessage({ type: 'done' });
   } else if (msg.type === 'getStatus') {
     await updateStatusDisplay();
