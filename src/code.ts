@@ -12,7 +12,14 @@ const languages = [
   { name: "Chinese (Traditional)", code: "zh-TW" },
   { name: "Russian", code: "ru" },
   { name: "Arabic", code: "ar" },
-  { name: "Thai", code: "th" }
+  { name: "Thai", code: "th" },
+  { name: "Tamil", code: "ta" },
+  { name: "Urdu", code: "ur" },
+  { name: "Amharic", code: "am" },
+  { name: "Belarusian", code: "be" },
+  { name: "Georgian", code: "ka" },
+  { name: "Malayalam", code: "ml" },
+  { name: "Persian", code: "fa" },
 ];
 
 // Store the API key directly in the code
@@ -103,9 +110,16 @@ async function translateBatch(texts: string[], targetLang: string): Promise<stri
     }));
 
     console.log("[DEBUG] targetLang antes do batch:", targetLang);
-    if (!languages.find(lang => lang.code === targetLang)) {
+    const normalizedTargetLang = targetLang.split('-')[0];
+    console.log("[DEBUG] normalizedTargetLang:", normalizedTargetLang);
+    if (!languages.find(lang => lang.code === normalizedTargetLang)) {
       throw new Error(`[ERRO] Idioma não suportado: ${targetLang}`);
     }
+
+    const langObj = languages.find(lang => lang.code === targetLang);
+    const langName = langObj ? langObj.name : targetLang;
+
+    console.log("[DEBUG] Usando langName no prompt:", langName);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -118,7 +132,7 @@ async function translateBatch(texts: string[], targetLang: string): Promise<stri
         messages: [
           {
             role: "system",
-            content: `You are a translator. Translate the following texts to ${targetLang}.
+            content: `You are a professional translator. Translate ALL of the following texts to ${langName}. The output must be in the ${langName} script, not English.
 IMPORTANT RULES:
 1. Preserve all placeholders in the format [UNTRANSLATABLE_X] or [NUMBER_X]
 2. Return translations as a JSON array of strings
@@ -136,7 +150,7 @@ Example input:
         ],
         temperature: 0.1,
         max_tokens: 2000
-      })
+      }, null, 2)
     });
 
     if (!response.ok) {
@@ -301,7 +315,8 @@ figma.ui.onmessage = async (msg) => {
             console.log("[DEBUG] Batch de textos:", textsToTranslate);
 
             // Translate the batch
-            const translatedTexts = await translateBatch(textsToTranslate, targetLang);
+            const normalizedTargetLang = targetLang.split('-')[0];
+            const translatedTexts = await translateBatch(textsToTranslate, normalizedTargetLang);
 
             // Update the text nodes with translations
             for (let i = 0; i < batch.length; i++) {
