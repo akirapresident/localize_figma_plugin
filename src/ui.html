@@ -614,9 +614,13 @@
     };
 
     function updateStatusDisplay() {
-      creditsCount.textContent = remainingCredits === '∞' ? '∞' : remainingCredits.toString();
-      subscriptionStatus.textContent = isSubscribed ? 'Subscribed' : 'Unsubscribed';
-      subscriptionStatus.className = `value ${isSubscribed ? 'subscribed' : 'unsubscribed'}`;
+      if (creditsCount) {
+        creditsCount.textContent = remainingCredits === '∞' ? '∞' : remainingCredits.toString();
+      }
+      if (subscriptionStatus) {
+        subscriptionStatus.textContent = isSubscribed ? 'Subscribed' : 'Unsubscribed';
+        subscriptionStatus.className = `value ${isSubscribed ? 'subscribed' : 'unsubscribed'}`;
+      }
     }
 
     function updateButtonState() {
