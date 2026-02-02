@@ -6,3 +6,8 @@ node_modules
 out/
 dist/
 code.js
+
+# Environment variables (API keys, secrets)
+.env
+.env.local
+.env.*.local

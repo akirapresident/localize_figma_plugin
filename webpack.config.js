@@ -1,5 +1,6 @@
 const path = require('path');
 const webpack = require('webpack');
+require('dotenv').config();
 
 module.exports = (env, argv) => ({
   mode: argv.mode === 'production' ? 'production' : 'development',
@@ -36,7 +37,8 @@ module.exports = (env, argv) => ({
   },
   plugins: [
     new webpack.DefinePlugin({
-      __html__: JSON.stringify(require('fs').readFileSync('./src/ui.html', 'utf8'))
+      __html__: JSON.stringify(require('fs').readFileSync('./src/ui.html', 'utf8')),
+      'process.env.OPENAI_API_KEY': JSON.stringify(process.env.OPENAI_API_KEY)
     })
   ]
 });

@@ -90,8 +90,8 @@ const languages = [
   { name: "Malayalam (India)", code: "mi-IN" }
 ];
 
-// Store the API key directly in the code
-const OPENAI_API_KEY = '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';
+// API key from environment variable (injected at build time) or provided via UI
+let OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 // Constants for freemium feature
 const FREE_FRAMES_LIMIT = 2;
@@ -506,5 +506,7 @@ figma.ui.onmessage = async (msg) => {
     }
   } else if (msg.type === 'updateExcludedTerms') {
     excludedTerms = msg.terms;
+  } else if (msg.type === 'setApiKey') {
+    OPENAI_API_KEY = msg.apiKey;
   }
 };
