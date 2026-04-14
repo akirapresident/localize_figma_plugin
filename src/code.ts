@@ -342,129 +342,125 @@ figma.ui.onmessage = async (msg) => {
     const isSubscribed = figma.payments?.status.type === 'PAID';
 
     let hasErrors = false;
-    const firstFrameTranslationsY: number[] = [];
     const failedLanguages: string[] = [];
-    
-    // Process each selected frame
-    for (const frame of selectedFrames) {
-      // Process each target language
-      for (const targetLang of targetLangs) {
-        try {
-          const clonedFrame = frame.clone() as FrameNode;
-          const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
-          clonedFrame.name = `(${targetLang} - ${languageName}) ${frame.name}`;
-          clonedFrame.x = frame.x;
-          
-          if (frame === selectedFrames[0]) {
-            const y = frame.y + frame.height + 50 + (targetLangs.indexOf(targetLang) * (frame.height + 50));
-            clonedFrame.y = y;
-            firstFrameTranslationsY.push(y);
-          } else {
-            clonedFrame.y = firstFrameTranslationsY[targetLangs.indexOf(targetLang)];
-          }
 
-          // Find all text nodes in the cloned frame
-          const textNodes: TextNode[] = [];
-          function findTextNodes(node: SceneNode) {
-            if (node.type === 'TEXT') {
-              // Only add non-empty text nodes
-              if (node.characters.trim()) {
-                textNodes.push(node);
-              }
-            } else if ('children' in node) {
-              for (const child of node.children) {
-                findTextNodes(child);
-              }
+    // Helper function to process a single language for a frame
+    async function processLanguage(frame: FrameNode, targetLang: string, langIndex: number): Promise<{ success: boolean; lang: string }> {
+      try {
+        const clonedFrame = frame.clone() as FrameNode;
+        const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
+        clonedFrame.name = `(${targetLang} - ${languageName}) ${frame.name}`;
+        clonedFrame.x = frame.x;
+
+        // Position the cloned frame
+        const y = frame.y + frame.height + 50 + (langIndex * (frame.height + 50));
+        clonedFrame.y = y;
+
+        // Find all text nodes in the cloned frame
+        const textNodes: TextNode[] = [];
+        function findTextNodes(node: SceneNode) {
+          if (node.type === 'TEXT') {
+            if (node.characters.trim()) {
+              textNodes.push(node);
+            }
+          } else if ('children' in node) {
+            for (const child of node.children) {
+              findTextNodes(child);
             }
           }
-          findTextNodes(clonedFrame);
+        }
+        findTextNodes(clonedFrame);
 
-          if (textNodes.length === 0) {
-            console.log(`No text nodes found in frame "${clonedFrame.name}"`);
-            continue;
+        if (textNodes.length === 0) {
+          console.log(`No text nodes found in frame "${clonedFrame.name}"`);
+          return { success: true, lang: targetLang };
+        }
+
+        // Create batches of text nodes
+        const batches: TextNode[][] = [];
+        for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
+          batches.push(textNodes.slice(i, i + BATCH_SIZE));
+        }
+
+        // Process each batch (sequentially within a language to avoid race conditions)
+        for (const batch of batches) {
+          const textsToTranslate = batch.map(node => {
+            const { text } = replaceWithPlaceholders(node.characters, excludedTerms);
+            return text;
+          });
+
+          console.log(`[DEBUG] Translating batch to ${targetLang}:`, textsToTranslate);
+
+          const translatedTexts = await translateBatch(textsToTranslate, targetLang);
+
+          // Check if translation failed
+          const translationFailed = translatedTexts.length === textsToTranslate.length &&
+            translatedTexts.every((translated, index) => translated === textsToTranslate[index]);
+
+          if (translationFailed) {
+            console.log(`[DEBUG] Translation failed for ${targetLang}`);
+            return { success: false, lang: targetLang };
           }
 
-          // Create batches of text nodes
-          const batches: TextNode[][] = [];
-          for (let i = 0; i < textNodes.length; i += BATCH_SIZE) {
-            batches.push(textNodes.slice(i, i + BATCH_SIZE));
-          }
+          // Update text nodes with translations
+          for (let i = 0; i < batch.length; i++) {
+            const node = batch[i];
+            const translatedText = translatedTexts[i];
 
-          // Process each batch
-          for (const batch of batches) {
-            // Prepare texts for translation
-            const textsToTranslate = batch.map(node => {
-              const { text, placeholders, numberPlaceholders } = replaceWithPlaceholders(node.characters, excludedTerms);
-              return text;
-            });
-
-            console.log("[DEBUG] Batch de textos:", textsToTranslate);
-
-            // Translate the batch
-            const translatedTexts = await translateBatch(textsToTranslate, targetLang);
-
-            // Check if translation actually happened by comparing content
-            const translationFailed = translatedTexts.length === textsToTranslate.length && 
-              translatedTexts.every((translated, index) => translated === textsToTranslate[index]);
-            
-            if (translationFailed) {
-              console.log(`[DEBUG] Translation failed for ${targetLang} - all texts returned unchanged`);
-              failedLanguages.push(targetLang);
-              continue;
-            }
-
-            // Update the text nodes with translations
-            for (let i = 0; i < batch.length; i++) {
-              const node = batch[i];
-              const translatedText = translatedTexts[i];
-              
-              try {
-                // Load the font first
-                console.log("[DEBUG] Font name object:", JSON.stringify(node.fontName));
-                console.log("[DEBUG] Font name type:", typeof node.fontName);
-                console.log("[DEBUG] Font name properties:", Object.keys(node.fontName || {}));
-                
-                // Check if fontName is valid before loading
-                if (!node.fontName || typeof node.fontName === 'symbol' || !node.fontName.family || !node.fontName.style) {
-                  console.log("[DEBUG] Invalid font detected, using fallback font");
-                  // Use a fallback font that's guaranteed to be available
-                  await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-                  // Update the node's font to the fallback
-                  node.fontName = { family: "Inter", style: "Regular" };
-                } else {
-                  await figma.loadFontAsync(node.fontName as FontName);
-                }
-                
-                // Restore placeholders
-                let finalText = translatedText;
-                const { placeholders, numberPlaceholders } = replaceWithPlaceholders(node.characters, excludedTerms);
-                
-                // Restore number placeholders
-                Object.entries(numberPlaceholders).forEach(([placeholder, value]) => {
-                  finalText = finalText.replace(placeholder, value);
-                });
-                
-                // Restore excluded terms
-                Object.entries(placeholders).forEach(([placeholder, value]) => {
-                  finalText = finalText.replace(placeholder, value);
-                });
-
-                // Update the text node
-                node.characters = finalText;
-              } catch (error: any) {
-                console.error(`Error updating text node:`, error);
-                figma.notify(`Error updating text: ${error.message}`, { error: true });
-                hasErrors = true;
+            try {
+              // Load font
+              if (!node.fontName || typeof node.fontName === 'symbol' || !node.fontName.family || !node.fontName.style) {
+                await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+                node.fontName = { family: "Inter", style: "Regular" };
+              } else {
+                await figma.loadFontAsync(node.fontName as FontName);
               }
+
+              // Restore placeholders
+              let finalText = translatedText;
+              const { placeholders, numberPlaceholders } = replaceWithPlaceholders(node.characters, excludedTerms);
+
+              Object.entries(numberPlaceholders).forEach(([placeholder, value]) => {
+                finalText = finalText.replace(placeholder, value);
+              });
+
+              Object.entries(placeholders).forEach(([placeholder, value]) => {
+                finalText = finalText.replace(placeholder, value);
+              });
+
+              node.characters = finalText;
+            } catch (error: any) {
+              console.error(`Error updating text node:`, error);
+              return { success: false, lang: targetLang };
             }
           }
+        }
 
-        } catch (error: any) {
-          console.error(`Error translating to ${targetLang}:`, error);
-          failedLanguages.push(targetLang);
+        return { success: true, lang: targetLang };
+      } catch (error: any) {
+        console.error(`Error translating to ${targetLang}:`, error);
+        return { success: false, lang: targetLang };
+      }
+    }
+
+    // Process each frame
+    for (let frameIndex = 0; frameIndex < selectedFrames.length; frameIndex++) {
+      const frame = selectedFrames[frameIndex];
+
+      // Process all languages in parallel for this frame
+      const languagePromises = targetLangs.map((targetLang: string, langIndex: number) =>
+        processLanguage(frame, targetLang, langIndex)
+      );
+
+      const results = await Promise.all(languagePromises);
+
+      // Collect failed languages
+      results.forEach(result => {
+        if (!result.success && !failedLanguages.includes(result.lang)) {
+          failedLanguages.push(result.lang);
           hasErrors = true;
         }
-      }
+      });
     }
 
     // Update translated frames count
