@@ -93,9 +93,6 @@ const languages = [
 // API key from environment variable (injected at build time) or provided via UI
 let OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
-// Constants for freemium feature
-const FREE_FRAMES_LIMIT = 2;
-
 // Add these types at the top of the file
 type TranslationResponse = {
   choices: {
@@ -110,19 +107,6 @@ let excludedTerms: string[] = [];
 
 // Add this constant at the top with other constants
 const BATCH_SIZE = 10; // Number of texts to translate in one API call
-
-// Function to update status display
-async function updateStatusDisplay() {
-  const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
-  const remainingCredits = figma.payments?.status.type === 'PAID' ? '∞' : Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
-  const isSubscribed = figma.payments?.status.type === 'PAID';
-
-  figma.ui.postMessage({
-    type: 'updateStatus',
-    remainingCredits,
-    isSubscribed
-  });
-}
 
 // Helper to replace numbers first, then excluded terms
 function replaceWithPlaceholders(text: string, excludedTerms: string[]): { text: string, placeholders: {[key: string]: string}, numberPlaceholders: {[key: string]: string} } {
@@ -290,9 +274,8 @@ async function asyncPool<T, R>(poolLimit: number, array: T[], iteratorFn: (item:
 // Show the UI
 figma.showUI(__html__, { width: 400, height: 600 });
 
-// Initial check for selected frames and status
+// Initial check for selected frames
 updateTextCount();
-updateStatusDisplay();
 
 // Listen for selection changes
 figma.on('selectionchange', () => {
@@ -335,11 +318,6 @@ figma.ui.onmessage = async (msg) => {
       figma.notify('Please select at least one frame', { error: true });
       return;
     }
-
-    // Check subscription status and credits
-    const translatedFramesCount = await figma.clientStorage.getAsync('translatedFramesCount') || 0;
-    const remainingCredits = Math.max(0, FREE_FRAMES_LIMIT - translatedFramesCount);
-    const isSubscribed = figma.payments?.status.type === 'PAID';
 
     let hasErrors = false;
     const failedLanguages: string[] = [];
@@ -463,13 +441,6 @@ figma.ui.onmessage = async (msg) => {
       });
     }
 
-    // Update translated frames count
-    if (!hasErrors) {
-      const newCount = translatedFramesCount + selectedFrames.length;
-      await figma.clientStorage.setAsync('translatedFramesCount', newCount);
-      updateStatusDisplay();
-    }
-
     // Notify completion with failed languages if any
     if (failedLanguages.length > 0) {
       figma.notify(`Translation completed with errors. Failed languages: ${failedLanguages.join(', ')}`, { error: true });
@@ -477,29 +448,6 @@ figma.ui.onmessage = async (msg) => {
       figma.notify('Translation completed successfully');
     }
     figma.ui.postMessage({ type: 'done' });
-  } else if (msg.type === 'getStatus') {
-    await updateStatusDisplay();
-  } else if (msg.type === 'subscribe') {
-    if (figma.payments) {
-      try {
-        await figma.payments.initiateCheckoutAsync({
-          interstitial: 'PAID_FEATURE'
-        });
-
-        if (figma.payments.status.type === 'PAID') {
-          figma.notify('Thank you for subscribing!');
-          await figma.clientStorage.setAsync('translatedFramesCount', 0);
-          await updateStatusDisplay();
-        } else {
-          figma.notify('Subscription cancelled', { error: true });
-          await updateStatusDisplay();
-        }
-      } catch (error) {
-        console.error('Subscription error:', error);
-        figma.notify('Subscription cancelled', { error: true });
-        await updateStatusDisplay();
-      }
-    }
   } else if (msg.type === 'updateExcludedTerms') {
     excludedTerms = msg.terms;
   } else if (msg.type === 'setApiKey') {

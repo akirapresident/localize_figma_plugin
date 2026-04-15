@@ -12,7 +12,7 @@
     "reasoning": "Required to connect to OpenAI's API for text translation services"
   },
   "documentAccess": "dynamic-page",
-  "permissions": ["currentuser", "payments"],
+  "permissions": ["currentuser"],
   "enablePrivatePluginApi": false,
   "enableProposedApi": false
 } 
