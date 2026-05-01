@@ -1,4 +1,4 @@
-// Define languages directly in the file for now
+// Supported target languages, sorted alphabetically by display name.
 const languages = [
   { name: "Afrikaans", code: "af" },
   { name: "Albanian", code: "sq" },
@@ -20,17 +20,10 @@ const languages = [
   { name: "Danish", code: "da-DK" },
   { name: "Dutch", code: "nl-NL" },
   { name: "English", code: "en" },
-  { name: "English (Australia)", code: "en-AU" },
-  { name: "English (Canada)", code: "en-CA" },
-  { name: "English (Great Britain)", code: "en-GB" },
-  { name: "English (India)", code: "en-IN" },
-  { name: "English (U.S.)", code: "en-US" },
   { name: "Estonian", code: "et" },
   { name: "Filipino", code: "fil" },
   { name: "Finnish", code: "fi-FI" },
   { name: "French", code: "fr" },
-  { name: "French (Canada)", code: "fr-CA" },
-  { name: "French (France)", code: "fr-FR" },
   { name: "Galician", code: "gl-ES" },
   { name: "Georgian", code: "ka-GE" },
   { name: "German", code: "de-DE" },
@@ -53,30 +46,23 @@ const languages = [
   { name: "Lithuanian", code: "lt" },
   { name: "Macedonian", code: "mk-MK" },
   { name: "Malay", code: "ms" },
-  { name: "Malay (Malaysia)", code: "ms-MY" },
   { name: "Malayalam", code: "ml-IN" },
   { name: "Marathi", code: "mr-IN" },
   { name: "Mongolian", code: "mn-MN" },
   { name: "Nepali", code: "ne-NP" },
   { name: "Norwegian", code: "no-NO" },
   { name: "Persian", code: "fa" },
-  { name: "Persian (Iran)", code: "fa-IR" },
   { name: "Polish", code: "pl-PL" },
-  { name: "Portuguese (Brazil)", code: "pt-BR" },
-  { name: "Portuguese (Portugal)", code: "pt-PT" },
+  { name: "Portuguese", code: "pt" },
   { name: "Punjabi", code: "pa" },
   { name: "Romanian", code: "ro" },
   { name: "Romansh", code: "rm" },
   { name: "Russian", code: "ru" },
-  { name: "Russian (RU)", code: "ru-RU" },
   { name: "Serbian", code: "sr" },
   { name: "Sinhala", code: "si-LK" },
   { name: "Slovak", code: "sk" },
   { name: "Slovenian", code: "sl" },
-  { name: "Spanish (Latin America)", code: "es-419" },
-  { name: "Spanish (Mexico)", code: "es-MX" },
-  { name: "Spanish (Spain)", code: "es-ES" },
-  { name: "Spanish (United States)", code: "es-US" },
+  { name: "Spanish", code: "es" },
   { name: "Swahili", code: "sw" },
   { name: "Swedish", code: "sv-SE" },
   { name: "Tamil", code: "ta-IN" },
@@ -86,8 +72,7 @@ const languages = [
   { name: "Ukrainian", code: "uk" },
   { name: "Urdu", code: "ur" },
   { name: "Vietnamese", code: "vi" },
-  { name: "Zulu", code: "zu" },
-  { name: "Malayalam (India)", code: "mi-IN" }
+  { name: "Zulu", code: "zu" }
 ];
 
 // API key from environment variable (injected at build time) or provided via UI
@@ -201,7 +186,7 @@ ${context.trim()}`;
   systemPrompt += `
 IMPORTANT RULES:
 1. Preserve all placeholders in the format [UNTRANSLATABLE_X] or [NUMBER_X]
-2. Preserve any <C_X>...</C_X> color markers exactly — they wrap text that must remain colored. Translate the content INSIDE the markers as part of the sentence, but keep the opening <C_X> and closing </C_X> tags wrapped around the translated equivalent. The letter X (A, B, C, ...) must match between opening and closing tag.
+2. Preserve any <C_X>...</C_X> color markers EXACTLY as written. Use literal characters: open with the four characters '<', 'C', '_', single uppercase letter, then '>'; close with '<', '/', 'C', '_', same letter, '>'. NEVER substitute '>' with ';' or any other character. NEVER omit the closing </C_X> tag. Translate the content INSIDE the markers as part of the sentence. The letter X (A, B, C, ...) must match between opening and closing tag.
 3. Return translations as a JSON array of strings
 4. Keep the exact same order as the input
 5. Do not add any explanations or additional text
@@ -414,9 +399,15 @@ function applyTranslatedTextWithColors(
     return;
   }
 
-  const markerRegex = /<C_([A-Z])>([\s\S]*?)<\/C_\1>/g;
+  // Permissive regex: accepts `<C_A>...</C_A>` and common malformations:
+  //  - `>` substituted with `;` or `]`
+  //  - `<` substituted with `[` (model "harmonizes" with [NUMBER_X] placeholders)
+  //  - terminator omitted entirely
+  // Open: `[<[]C_X` + optional [>;]], close: `[<[]/C_X` + optional [>;]].
+  const markerRegex = /[<\[]C_([A-Z])[>;\]]?([\s\S]*?)[<\[]\/C_\1[>;\]]?/g;
   let cleanText = '';
   const ranges: { start: number; end: number; fills: ReadonlyArray<Paint> }[] = [];
+  const recovered = new Set<string>();
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -425,40 +416,82 @@ function applyTranslatedTextWithColors(
     const rangeStart = cleanText.length;
     cleanText += match[2];
     const rangeEnd = cleanText.length;
-    const fills = colorMap[match[1]];
+    const letter = match[1];
+    const fills = colorMap[letter];
     if (fills && rangeEnd > rangeStart) {
       ranges.push({ start: rangeStart, end: rangeEnd, fills });
+      recovered.add(letter);
     }
     lastIndex = match.index + match[0].length;
   }
   cleanText += translatedText.slice(lastIndex);
-  // Strip any orphan markers (mismatched open/close that the regex didn't pair)
-  cleanText = cleanText.replace(/<\/?C_[A-Z]>/g, '');
+
+  // Heuristic recovery: for any color whose pair wasn't found, look for a
+  // malformed lone opener like `<C_X;` or `<C_X` and color the next word.
+  for (const letter of Object.keys(colorMap)) {
+    if (recovered.has(letter)) continue;
+    const lonePattern = new RegExp(`[<\\[]C_${letter}[^A-Za-z]?(\\S*)`);
+    const m = lonePattern.exec(cleanText);
+    if (m && m[1]) {
+      const wordStart = (m.index ?? 0) + m[0].length - m[1].length;
+      const wordEnd = wordStart + m[1].length;
+      // Remove the malformed opener from cleanText and adjust positions
+      const beforeOpener = cleanText.slice(0, m.index);
+      const afterOpener = cleanText.slice((m.index ?? 0) + m[0].length - m[1].length);
+      cleanText = beforeOpener + afterOpener;
+      const newStart = beforeOpener.length;
+      const newEnd = newStart + m[1].length;
+      const fills = colorMap[letter];
+      if (fills && newEnd > newStart) {
+        ranges.push({ start: newStart, end: newEnd, fills });
+        recovered.add(letter);
+        console.log(`[color] recovered malformed marker for ${letter} → colored next word "${m[1]}"`);
+      }
+    }
+  }
+
+  // Final strip: remove any remaining marker fragments (well-formed or not),
+  // including bracket-substituted forms.
+  cleanText = cleanText.replace(/[<\[]\/?C_[A-Z][>;,!\]]?/g, '');
 
   node.characters = cleanText;
 
   for (const r of ranges) {
     try {
-      node.setRangeFills(r.start, r.end, r.fills as Paint[]);
+      // Clamp ranges to actual text length in case strip removed chars
+      const safeStart = Math.max(0, Math.min(r.start, cleanText.length));
+      const safeEnd = Math.max(safeStart, Math.min(r.end, cleanText.length));
+      if (safeEnd > safeStart) {
+        node.setRangeFills(safeStart, safeEnd, r.fills as Paint[]);
+      }
     } catch (err) {
       console.warn(`[color] failed to apply fills to range ${r.start}-${r.end}:`, err);
     }
   }
 
   const expected = Object.keys(colorMap).length;
-  if (ranges.length < expected) {
-    console.warn(`[color] expected ${expected} color range(s), recovered ${ranges.length}. Model may have dropped markers in: "${translatedText.slice(0, 80)}"`);
+  if (recovered.size < expected) {
+    console.warn(`[color] expected ${expected} color range(s), recovered ${recovered.size}. Model may have dropped markers in: "${translatedText.slice(0, 80)}"`);
   }
 }
 
-// Measure the rendered width of a single word at a given font size,
-// using a temporary off-screen text node.
-async function measureWordWidth(word: string, fontName: FontName, fontSize: number): Promise<number> {
+// Measure the rendered width of a single word at a given font size, copying
+// the source node's letterSpacing and textCase so the measurement matches what
+// will actually be drawn (otherwise loose tracking or UPPERCASE hide-overflow).
+async function measureWordWidth(
+  word: string,
+  fontName: FontName,
+  fontSize: number,
+  letterSpacing: LetterSpacing | typeof figma.mixed,
+  textCase: TextCase | typeof figma.mixed
+): Promise<number> {
   const temp = figma.createText();
   try {
     await figma.loadFontAsync(fontName);
     temp.fontName = fontName;
     temp.fontSize = fontSize;
+    if (typeof letterSpacing !== 'symbol') temp.letterSpacing = letterSpacing;
+    if (typeof textCase !== 'symbol') temp.textCase = textCase;
     temp.characters = word;
     return temp.width;
   } finally {
@@ -483,24 +516,31 @@ async function fitTextToBox(node: TextNode, originalWidth: number, originalHeigh
   const tolerance = 0.5;
   const minFontSize = Math.max(8, originalFontSize * 0.6);
 
-  // Compute a font-size cap that ensures the longest single word fits in the box width.
-  // This prevents the "Rastrea-dor" character-break case in HEIGHT mode.
+  // Compute a font-size cap that ensures the WIDEST single word fits in the box.
+  // We must check by measured width (not character count) because uppercase /
+  // wide glyphs can make a shorter word visually wider.
   let wordCap = Infinity;
+  let widestWord = '';
+  let widestMeasured = 0;
   const fontName = node.fontName;
+  const letterSpacing = node.letterSpacing;
+  const textCase = node.textCase;
   if (fontName && typeof fontName !== 'symbol') {
     const words = node.characters.split(/\s+/).filter(w => w.length > 0);
-    if (words.length > 0) {
-      const longestWord = words.reduce((a, b) => a.length >= b.length ? a : b);
+    for (const word of words) {
       try {
-        const measuredWidth = await measureWordWidth(longestWord, fontName as FontName, originalFontSize);
-        if (measuredWidth > originalWidth) {
-          // Linear scale assumption — accurate enough for fontSize >= 8pt.
-          // Apply 2% safety margin to absorb hinting differences.
-          wordCap = (originalWidth / measuredWidth) * originalFontSize * 0.98;
+        const w = await measureWordWidth(word, fontName as FontName, originalFontSize, letterSpacing, textCase);
+        if (w > widestMeasured) {
+          widestMeasured = w;
+          widestWord = word;
         }
       } catch (err) {
-        console.warn(`[fit] could not measure longest word "${longestWord}":`, err);
+        console.warn(`[fit] could not measure word "${word}":`, err);
       }
+    }
+    if (widestMeasured > originalWidth) {
+      // Linear scale assumption with 5% safety margin for hinting/kerning.
+      wordCap = (originalWidth / widestMeasured) * originalFontSize * 0.95;
     }
   }
 
@@ -509,6 +549,22 @@ async function fitTextToBox(node: TextNode, originalWidth: number, originalHeigh
   if (wordCap < currentSize) {
     currentSize = Math.max(minFontSize, wordCap);
     node.fontSize = currentSize;
+  }
+
+  // Verify the widest word actually fits at the chosen size — if not (linear
+  // assumption was off), iteratively shrink with re-measurement.
+  if (widestWord && fontName && typeof fontName !== 'symbol' && currentSize > minFontSize) {
+    let safetyIter = 0;
+    while (safetyIter++ < 8 && currentSize > minFontSize) {
+      try {
+        const actualWidth = await measureWordWidth(widestWord, fontName as FontName, currentSize, letterSpacing, textCase);
+        if (actualWidth <= originalWidth + tolerance) break;
+        currentSize = Math.max(minFontSize, currentSize - Math.max(0.5, originalFontSize * 0.05));
+        node.fontSize = currentSize;
+      } catch {
+        break;
+      }
+    }
   }
 
   const fits = (): boolean => {
@@ -689,9 +745,15 @@ figma.ui.onmessage = async (msg) => {
               // Restore placeholders (numbers + excluded terms) — color markers are still in finalText
               let finalText = translatedText;
               Object.entries(numberPlaceholders).forEach(([placeholder, value]) => {
+                if (!finalText.includes(placeholder)) {
+                  console.warn(`[${targetLang}] number placeholder ${placeholder}=${JSON.stringify(value)} was lost by the model in: "${finalText.slice(0, 80)}"`);
+                }
                 finalText = finalText.replace(placeholder, value);
               });
               Object.entries(placeholders).forEach(([placeholder, value]) => {
+                if (!finalText.includes(placeholder)) {
+                  console.warn(`[${targetLang}] term placeholder ${placeholder}=${JSON.stringify(value)} was lost by the model in: "${finalText.slice(0, 80)}"`);
+                }
                 finalText = finalText.replace(placeholder, value);
               });
 
