@@ -482,6 +482,12 @@
       </div>
     </div>
 
+    <div class="input-group" style="margin-top: 16px;">
+      <label for="translationContext">Translation Context (optional)</label>
+      <div class="help-text">Describe what the screen/app is about so translations are not too literal. E.g. "Fitness app — 'freeze' means stop moving on camera, not literal freezing."</div>
+      <textarea id="translationContext" placeholder="Describe the app/screen context..." style="width:100%;min-height:80px;padding:8px;border:1px solid #C0C0C0;border-radius:6px;font-size:12px;font-family:inherit;background:var(--figma-color-bg);color:var(--figma-color-text);box-sizing:border-box;resize:vertical;"></textarea>
+    </div>
+
     <button id="translateBtn" class="button" disabled>
       Translate Selected Frame
     </button>
@@ -507,10 +513,13 @@
 
     let currentTextCount = 0;
 
+    // Request saved translation context
+    parent.postMessage({ pluginMessage: { type: 'getContext' } }, '*');
+
     // Handle messages from the plugin code
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
-      
+
       if (msg.type === 'done') {
         translateBtn.disabled = false;
         updateButtonState();
@@ -518,6 +527,9 @@
         const { count } = msg;
         currentTextCount = count;
         updateButtonState();
+      } else if (msg.type === 'loadContext') {
+        const ctx = document.getElementById('translationContext');
+        if (ctx && typeof msg.context === 'string') ctx.value = msg.context;
       }
     };
 
@@ -611,14 +623,30 @@
       translateBtn.disabled = true;
       translateBtn.textContent = 'Translating...';
 
+      const contextEl = document.getElementById('translationContext');
+      const context = contextEl ? contextEl.value.trim() : '';
+
       // Send message to plugin code
       parent.postMessage({
         pluginMessage: {
           type: 'translate',
-          targetLangs: selectedLangs
+          targetLangs: selectedLangs,
+          context: context
         }
       }, '*');
     };
+
+    // Persist context on change (debounced)
+    const contextEl = document.getElementById('translationContext');
+    let contextSaveTimer = null;
+    contextEl.addEventListener('input', () => {
+      if (contextSaveTimer) clearTimeout(contextSaveTimer);
+      contextSaveTimer = setTimeout(() => {
+        parent.postMessage({
+          pluginMessage: { type: 'setContext', context: contextEl.value }
+        }, '*');
+      }, 400);
+    });
 
     languageSearch.addEventListener('input', (e) => {
       const searchTerm = e.target.value.toLowerCase();

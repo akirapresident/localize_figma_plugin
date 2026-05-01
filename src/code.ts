@@ -105,6 +105,10 @@ type TranslationResponse = {
 // Add excluded terms storage at the top with other constants
 let excludedTerms: string[] = [];
 
+// Optional translation context — describes the app/screen so the model
+// produces less literal translations. Persisted in clientStorage.
+let translationContext: string = '';
+
 // Add this constant at the top with other constants
 const BATCH_SIZE = 10; // Number of texts to translate in one API call
 
@@ -149,57 +153,67 @@ function replaceWithPlaceholders(text: string, excludedTerms: string[]): { text:
   };
 }
 
-// Add this new function after the translateText function
-async function translateBatch(texts: string[], targetLang: string): Promise<string[]> {
-  try {
-    console.log(`Starting batch translation to ${targetLang} for ${texts.length} texts`);
-    
-    // Create a batch of texts with their indices
-    const batchWithIndices = texts.map((text, index) => ({
-      index,
-      text,
-      hasPlaceholders: /\[UNTRANSLATABLE_\d+\]|\[NUMBER_\d+\]/.test(text)
-    }));
+type BatchResult =
+  | { ok: true; translations: string[] }
+  | { ok: false; reason: string; translations: string[]; retryAfterMs?: number };
 
-    console.log("[DEBUG] targetLang antes do batch:", targetLang);
-    
-    // Find the language object using the full language code
-    const langObj = languages.find(lang => lang.code === targetLang);
-    if (!langObj) {
-      console.error(`[ERRO] Idioma não suportado: ${targetLang}`);
-      return texts; // Return original texts instead of throwing error
-    }
+const MAX_RETRIES = 4;
 
-    const langName = langObj.name;
-    console.log("[DEBUG] Usando langName no prompt:", langName);
+// Parse the "try again in 607ms" / "try again in 1.2s" hint from OpenAI's 429 body.
+function parseRetryAfter(errorBody: string, retryAfterHeader: string | null): number | undefined {
+  if (retryAfterHeader) {
+    const seconds = parseFloat(retryAfterHeader);
+    if (!isNaN(seconds)) return Math.ceil(seconds * 1000);
+  }
+  const msMatch = errorBody.match(/try again in\s+(\d+(?:\.\d+)?)\s*ms/i);
+  if (msMatch) return Math.ceil(parseFloat(msMatch[1]));
+  const sMatch = errorBody.match(/try again in\s+(\d+(?:\.\d+)?)\s*s/i);
+  if (sMatch) return Math.ceil(parseFloat(sMatch[1]) * 1000);
+  return undefined;
+}
 
-    // Special handling for certain languages
-    let systemPrompt = `You are a professional translator. Translate ALL of the following texts to ${langName}. 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function translateBatchOnce(texts: string[], targetLang: string, langName: string, attempt: number, context: string): Promise<BatchResult> {
+  let systemPrompt = `You are a professional translator. Translate ALL of the following texts to ${langName}.
 
 CRITICAL: You MUST translate every single text that is not a placeholder. Do not leave any text in the original language.
 
 The output must be in the ${langName} script, not English.`;
-    
-    // Add specific instructions for certain languages
-    if (targetLang.startsWith('zh')) {
-      systemPrompt += ` For Chinese translations, use the appropriate script (Simplified for zh-CN, Traditional for zh-TW, Traditional for zh-HK).`;
-    } else if (targetLang === 'km-KH') {
-      systemPrompt += ` For Khmer translations, ensure proper use of Khmer script and numerals.`;
-    } else if (targetLang === 'mn-MN') {
-      systemPrompt += ` For Mongolian translations, use the Cyrillic script.`;
-    }
 
+  if (context && context.trim().length > 0) {
     systemPrompt += `
+
+CONTEXT — use this to produce natural, non-literal translations that fit the meaning rather than translating word-for-word:
+${context.trim()}`;
+  }
+
+  if (targetLang.startsWith('zh')) {
+    systemPrompt += ` For Chinese translations, use the appropriate script (Simplified for zh-CN, Traditional for zh-TW, Traditional for zh-HK).`;
+  } else if (targetLang === 'km-KH') {
+    systemPrompt += ` For Khmer translations, ensure proper use of Khmer script and numerals.`;
+  } else if (targetLang === 'mn-MN') {
+    systemPrompt += ` For Mongolian translations, use the Cyrillic script.`;
+  }
+
+  systemPrompt += `
 IMPORTANT RULES:
 1. Preserve all placeholders in the format [UNTRANSLATABLE_X] or [NUMBER_X]
-2. Return translations as a JSON array of strings
-3. Keep the exact same order as the input
-4. Do not add any explanations or additional text
+2. Preserve any <C_X>...</C_X> color markers exactly — they wrap text that must remain colored. Translate the content INSIDE the markers as part of the sentence, but keep the opening <C_X> and closing </C_X> tags wrapped around the translated equivalent. The letter X (A, B, C, ...) must match between opening and closing tag.
+3. Return translations as a JSON array of strings
+4. Keep the exact same order as the input
+5. Do not add any explanations or additional text
 
 Example input:
-["Hello [UNTRANSLATABLE_0]", "You have [NUMBER_0] messages"]`;
+["Create <C_A>Real Estate Videos</C_A> in [NUMBER_0] min", "You have [NUMBER_0] messages"]
+Example output (Portuguese):
+["Crie <C_A>Vídeos Imobiliários</C_A> em [NUMBER_0] min", "Você tem [NUMBER_0] mensagens"]`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  let response: Response;
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -208,63 +222,330 @@ Example input:
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
         messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: JSON.stringify(texts)
-          }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(texts) }
         ],
         temperature: 0.1,
         max_tokens: 2000
-      }, null, 2)
+      })
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API Error:', response.status, response.statusText, errorData);
-      return texts; // Return original texts instead of throwing error
-    }
-
-    const data = await response.json() as TranslationResponse;
-    if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
-      console.error('Invalid API response:', data);
-      return texts; // Return original texts instead of throwing error
-    }
-
-    console.log("[DEBUG] Resposta da OpenAI:", data);
-
-    const translatedTexts = JSON.parse(data.choices[0].message.content) as string[];
-    console.log("[DEBUG] Traduções recebidas:", translatedTexts);
-    console.log(`Batch translation completed for ${translatedTexts.length} texts`);
-    return translatedTexts;
-  } catch (error) {
-    console.error('Batch translation error:', error);
-    return texts; // Return original texts instead of throwing error
+  } catch (error: any) {
+    const reason = `network error: ${error?.message || String(error)}`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    return { ok: false, reason, translations: texts };
   }
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => '');
+    const reason = `HTTP ${response.status} ${response.statusText} — ${errorBody.slice(0, 300)}`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    const retryAfterMs = response.status === 429
+      ? parseRetryAfter(errorBody, response.headers.get('retry-after'))
+      : undefined;
+    return { ok: false, reason, translations: texts, retryAfterMs };
+  }
+
+  let data: TranslationResponse;
+  try {
+    data = await response.json() as TranslationResponse;
+  } catch (error: any) {
+    const reason = `invalid JSON in API response: ${error?.message || String(error)}`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    return { ok: false, reason, translations: texts };
+  }
+
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    const reason = `API response missing content: ${JSON.stringify(data).slice(0, 300)}`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    return { ok: false, reason, translations: texts };
+  }
+
+  let translatedTexts: string[];
+  try {
+    translatedTexts = JSON.parse(content) as string[];
+  } catch (error: any) {
+    const reason = `model returned non-JSON content: ${content.slice(0, 200)}`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    return { ok: false, reason, translations: texts };
+  }
+
+  if (!Array.isArray(translatedTexts) || translatedTexts.length !== texts.length) {
+    const reason = `length mismatch: expected ${texts.length}, got ${Array.isArray(translatedTexts) ? translatedTexts.length : 'non-array'}`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    return { ok: false, reason, translations: texts };
+  }
+
+  // Detect "all texts identical" — likely the model didn't translate
+  const allIdentical = translatedTexts.every((t, i) => t === texts[i]);
+  if (allIdentical && texts.some(t => t.trim().length > 0)) {
+    const reason = `model returned all texts unchanged (no translation occurred)`;
+    console.error(`[translate ${targetLang} attempt ${attempt}] ${reason}`);
+    return { ok: false, reason, translations: translatedTexts };
+  }
+
+  return { ok: true, translations: translatedTexts };
+}
+
+async function translateBatch(texts: string[], targetLang: string, context: string = ''): Promise<BatchResult> {
+  const langObj = languages.find(lang => lang.code === targetLang);
+  if (!langObj) {
+    const reason = `unsupported language code: ${targetLang}`;
+    console.error(`[translate] ${reason}`);
+    return { ok: false, reason, translations: texts };
+  }
+
+  console.log(`[translate ${targetLang}] starting batch of ${texts.length} texts (lang: ${langObj.name}${context ? ', with context' : ''})`);
+
+  let lastResult: BatchResult = { ok: false, reason: 'no attempts made', translations: texts };
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    lastResult = await translateBatchOnce(texts, targetLang, langObj.name, attempt, context);
+    if (lastResult.ok) {
+      console.log(`[translate ${targetLang}] success on attempt ${attempt}`);
+      return lastResult;
+    }
+    if (attempt < MAX_RETRIES) {
+      // If the API told us how long to wait (rate limit), honor that + small margin.
+      // Otherwise use exponential backoff.
+      const hintedWait = !lastResult.ok ? lastResult.retryAfterMs : undefined;
+      const fallbackBackoff = 500 * Math.pow(2, attempt - 1); // 500ms, 1s, 2s, 4s
+      const waitMs = hintedWait !== undefined ? hintedWait + 250 : fallbackBackoff;
+      console.log(`[translate ${targetLang}] retry ${attempt + 1}/${MAX_RETRIES} in ${waitMs}ms${hintedWait !== undefined ? ' (server-hinted)' : ''}`);
+      await sleep(waitMs);
+    }
+  }
+
+  console.error(`[translate ${targetLang}] FAILED after ${MAX_RETRIES} attempts. Last reason: ${lastResult.ok ? '' : lastResult.reason}`);
+  return lastResult;
 }
 
 // Modify the existing translateText function to use the batch translation
 async function translateText(text: string, targetLang: string): Promise<string> {
-  const results = await translateBatch([text], targetLang);
-  return results[0];
+  const result = await translateBatch([text], targetLang);
+  return result.translations[0];
 }
 
-// Helper to run async tasks with concurrency limit
+// Scan a text node's character ranges and wrap non-dominant-color segments
+// with <C_A>...</C_A> markers so the model preserves colored regions across
+// translation. Returns the marked text plus a map from letter → fills array.
+function extractColorSegments(node: TextNode): { text: string; colorMap: { [letter: string]: ReadonlyArray<Paint> } } {
+  const text = node.characters;
+  if (text.length === 0) return { text, colorMap: {} };
+
+  // Group consecutive characters by their fills
+  type Segment = { start: number; end: number; key: string; fills: ReadonlyArray<Paint> };
+  const segments: Segment[] = [];
+  let curStart = 0;
+  let curKey = '';
+  let curFills: ReadonlyArray<Paint> = [];
+
+  for (let i = 0; i < text.length; i++) {
+    const fills = node.getRangeFills(i, i + 1);
+    if (typeof fills === 'symbol') {
+      // Mixed fill on a single character — bail and skip color preservation
+      return { text, colorMap: {} };
+    }
+    const key = JSON.stringify(fills);
+    if (i === 0) {
+      curKey = key;
+      curFills = fills;
+    } else if (key !== curKey) {
+      segments.push({ start: curStart, end: i, key: curKey, fills: curFills });
+      curStart = i;
+      curKey = key;
+      curFills = fills;
+    }
+  }
+  segments.push({ start: curStart, end: text.length, key: curKey, fills: curFills });
+
+  if (segments.length <= 1) {
+    return { text, colorMap: {} }; // uniform color, no marking needed
+  }
+
+  // Pick the dominant fill (longest total run) — that one stays unmarked
+  const lengthByKey: { [key: string]: number } = {};
+  for (const seg of segments) {
+    lengthByKey[seg.key] = (lengthByKey[seg.key] || 0) + (seg.end - seg.start);
+  }
+  const dominantKey = Object.keys(lengthByKey).sort((a, b) => lengthByKey[b] - lengthByKey[a])[0];
+
+  // Assign letters to each non-dominant fill
+  const keyToLetter: { [key: string]: string } = {};
+  const colorMap: { [letter: string]: ReadonlyArray<Paint> } = {};
+  let nextLetterIdx = 0;
+  for (const seg of segments) {
+    if (seg.key === dominantKey) continue;
+    if (keyToLetter[seg.key] !== undefined) continue;
+    if (nextLetterIdx >= 26) {
+      keyToLetter[seg.key] = ''; // out of letters; this segment stays unmarked
+      continue;
+    }
+    const letter = String.fromCharCode(65 + nextLetterIdx); // A, B, C, ...
+    keyToLetter[seg.key] = letter;
+    colorMap[letter] = seg.fills;
+    nextLetterIdx++;
+  }
+
+  // Build marked text
+  let marked = '';
+  for (const seg of segments) {
+    const segText = text.slice(seg.start, seg.end);
+    const letter = keyToLetter[seg.key];
+    if (letter) {
+      marked += `<C_${letter}>${segText}</C_${letter}>`;
+    } else {
+      marked += segText;
+    }
+  }
+
+  return { text: marked, colorMap };
+}
+
+// Apply translated text with color markers back to the node, parsing <C_X>
+// markers into setRangeFills calls. Falls back to plain text if markers were
+// dropped by the model.
+function applyTranslatedTextWithColors(
+  node: TextNode,
+  translatedText: string,
+  colorMap: { [letter: string]: ReadonlyArray<Paint> }
+): void {
+  if (Object.keys(colorMap).length === 0) {
+    node.characters = translatedText;
+    return;
+  }
+
+  const markerRegex = /<C_([A-Z])>([\s\S]*?)<\/C_\1>/g;
+  let cleanText = '';
+  const ranges: { start: number; end: number; fills: ReadonlyArray<Paint> }[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerRegex.exec(translatedText)) !== null) {
+    cleanText += translatedText.slice(lastIndex, match.index);
+    const rangeStart = cleanText.length;
+    cleanText += match[2];
+    const rangeEnd = cleanText.length;
+    const fills = colorMap[match[1]];
+    if (fills && rangeEnd > rangeStart) {
+      ranges.push({ start: rangeStart, end: rangeEnd, fills });
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  cleanText += translatedText.slice(lastIndex);
+  // Strip any orphan markers (mismatched open/close that the regex didn't pair)
+  cleanText = cleanText.replace(/<\/?C_[A-Z]>/g, '');
+
+  node.characters = cleanText;
+
+  for (const r of ranges) {
+    try {
+      node.setRangeFills(r.start, r.end, r.fills as Paint[]);
+    } catch (err) {
+      console.warn(`[color] failed to apply fills to range ${r.start}-${r.end}:`, err);
+    }
+  }
+
+  const expected = Object.keys(colorMap).length;
+  if (ranges.length < expected) {
+    console.warn(`[color] expected ${expected} color range(s), recovered ${ranges.length}. Model may have dropped markers in: "${translatedText.slice(0, 80)}"`);
+  }
+}
+
+// Measure the rendered width of a single word at a given font size,
+// using a temporary off-screen text node.
+async function measureWordWidth(word: string, fontName: FontName, fontSize: number): Promise<number> {
+  const temp = figma.createText();
+  try {
+    await figma.loadFontAsync(fontName);
+    temp.fontName = fontName;
+    temp.fontSize = fontSize;
+    temp.characters = word;
+    return temp.width;
+  } finally {
+    temp.remove();
+  }
+}
+
+// Shrink the text node's font size until it fits within its original bounding box
+// AND no single word would be broken across lines (intra-word wrapping).
+// Only works for textAutoResize modes where dimensions reflect content (HEIGHT, WIDTH_AND_HEIGHT).
+async function fitTextToBox(node: TextNode, originalWidth: number, originalHeight: number, originalFontSize: number | symbol): Promise<void> {
+  if (typeof originalFontSize === 'symbol') {
+    // Mixed font sizes — would need per-range scaling; skip for now.
+    return;
+  }
+
+  const autoResize = node.textAutoResize;
+  if (autoResize !== 'HEIGHT' && autoResize !== 'WIDTH_AND_HEIGHT') {
+    return;
+  }
+
+  const tolerance = 0.5;
+  const minFontSize = Math.max(8, originalFontSize * 0.6);
+
+  // Compute a font-size cap that ensures the longest single word fits in the box width.
+  // This prevents the "Rastrea-dor" character-break case in HEIGHT mode.
+  let wordCap = Infinity;
+  const fontName = node.fontName;
+  if (fontName && typeof fontName !== 'symbol') {
+    const words = node.characters.split(/\s+/).filter(w => w.length > 0);
+    if (words.length > 0) {
+      const longestWord = words.reduce((a, b) => a.length >= b.length ? a : b);
+      try {
+        const measuredWidth = await measureWordWidth(longestWord, fontName as FontName, originalFontSize);
+        if (measuredWidth > originalWidth) {
+          // Linear scale assumption — accurate enough for fontSize >= 8pt.
+          // Apply 2% safety margin to absorb hinting differences.
+          wordCap = (originalWidth / measuredWidth) * originalFontSize * 0.98;
+        }
+      } catch (err) {
+        console.warn(`[fit] could not measure longest word "${longestWord}":`, err);
+      }
+    }
+  }
+
+  // Apply the word-fit cap up front so the shrink loop starts from a safe size.
+  let currentSize = originalFontSize;
+  if (wordCap < currentSize) {
+    currentSize = Math.max(minFontSize, wordCap);
+    node.fontSize = currentSize;
+  }
+
+  const fits = (): boolean => {
+    if (autoResize === 'HEIGHT') {
+      return node.height <= originalHeight + tolerance;
+    }
+    return node.width <= originalWidth + tolerance && node.height <= originalHeight + tolerance;
+  };
+
+  const step = Math.max(0.5, originalFontSize * 0.05);
+  while (currentSize > minFontSize && !fits()) {
+    currentSize = Math.max(minFontSize, currentSize - step);
+    node.fontSize = currentSize;
+  }
+
+  const preview = node.characters.slice(0, 30).replace(/\n/g, ' ');
+  if (!fits()) {
+    console.warn(`[fit] "${preview}..." still overflows at min ${minFontSize.toFixed(1)}pt (original ${originalFontSize}pt)`);
+  } else if (currentSize < originalFontSize) {
+    const reason = wordCap < originalFontSize ? ' (long word would break)' : '';
+    console.log(`[fit] "${preview}..." shrunk from ${originalFontSize}pt to ${currentSize.toFixed(1)}pt${reason}`);
+  }
+}
+
+// Helper to run async tasks with bounded concurrency. Each task removes
+// itself from the executing set when it settles, so the pool stays full.
 async function asyncPool<T, R>(poolLimit: number, array: T[], iteratorFn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const ret: R[] = [];
-  const executing: Promise<void>[] = [];
+  const executing = new Set<Promise<void>>();
   for (let i = 0; i < array.length; i++) {
-    const p = Promise.resolve().then(() => iteratorFn(array[i], i)).then(res => { ret[i] = res });
-    executing.push(p);
-    if (executing.length >= poolLimit) {
+    const p: Promise<void> = Promise.resolve()
+      .then(() => iteratorFn(array[i], i))
+      .then(res => { ret[i] = res; });
+    executing.add(p);
+    p.finally(() => executing.delete(p));
+    if (executing.size >= poolLimit) {
       await Promise.race(executing);
-      // Remove resolved promises
-      for (let j = executing.length - 1; j >= 0; j--) {
-        executing.splice(j, 1);
-      }
     }
   }
   await Promise.all(executing);
@@ -302,6 +583,10 @@ function updateTextCount() {
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'translate') {
     const { targetLangs } = msg;
+    // Use context from message if provided, otherwise fall back to stored
+    const contextForRun: string = (typeof msg.context === 'string' && msg.context.trim().length > 0)
+      ? msg.context
+      : translationContext;
     
     // Get all selected nodes
     const selectedNodes = figma.currentPage.selection;
@@ -320,10 +605,10 @@ figma.ui.onmessage = async (msg) => {
     }
 
     let hasErrors = false;
-    const failedLanguages: string[] = [];
+    const failedLanguages: { lang: string; reason: string }[] = [];
 
     // Helper function to process a single language for a frame
-    async function processLanguage(frame: FrameNode, targetLang: string, langIndex: number): Promise<{ success: boolean; lang: string }> {
+    async function processLanguage(frame: FrameNode, targetLang: string, langIndex: number): Promise<{ success: boolean; lang: string; reason?: string }> {
       try {
         const clonedFrame = frame.clone() as FrameNode;
         const languageName = languages.find(lang => lang.code === targetLang)?.name || targetLang;
@@ -350,7 +635,7 @@ figma.ui.onmessage = async (msg) => {
         findTextNodes(clonedFrame);
 
         if (textNodes.length === 0) {
-          console.log(`No text nodes found in frame "${clonedFrame.name}"`);
+          console.log(`[${targetLang}] no text nodes in frame "${clonedFrame.name}"`);
           return { success: true, lang: targetLang };
         }
 
@@ -360,32 +645,39 @@ figma.ui.onmessage = async (msg) => {
           batches.push(textNodes.slice(i, i + BATCH_SIZE));
         }
 
+        console.log(`[${targetLang}] processing ${textNodes.length} text nodes in ${batches.length} batch(es)`);
+
         // Process each batch (sequentially within a language to avoid race conditions)
-        for (const batch of batches) {
-          const textsToTranslate = batch.map(node => {
-            const { text } = replaceWithPlaceholders(node.characters, excludedTerms);
-            return text;
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          const batch = batches[batchIdx];
+
+          // Pre-process each node: wrap colored ranges, then add placeholder substitutions
+          const nodeData = batch.map(node => {
+            const { text: markedText, colorMap } = extractColorSegments(node);
+            const { text: finalInputText, placeholders, numberPlaceholders } = replaceWithPlaceholders(markedText, excludedTerms);
+            return { node, finalInputText, placeholders, numberPlaceholders, colorMap };
           });
 
-          console.log(`[DEBUG] Translating batch to ${targetLang}:`, textsToTranslate);
+          const textsToTranslate = nodeData.map(d => d.finalInputText);
+          const result = await translateBatch(textsToTranslate, targetLang, contextForRun);
 
-          const translatedTexts = await translateBatch(textsToTranslate, targetLang);
-
-          // Check if translation failed
-          const translationFailed = translatedTexts.length === textsToTranslate.length &&
-            translatedTexts.every((translated, index) => translated === textsToTranslate[index]);
-
-          if (translationFailed) {
-            console.log(`[DEBUG] Translation failed for ${targetLang}`);
-            return { success: false, lang: targetLang };
+          if (!result.ok) {
+            const reason = `batch ${batchIdx + 1}/${batches.length}: ${result.reason}`;
+            console.error(`[${targetLang}] ${reason}`);
+            return { success: false, lang: targetLang, reason };
           }
 
           // Update text nodes with translations
-          for (let i = 0; i < batch.length; i++) {
-            const node = batch[i];
-            const translatedText = translatedTexts[i];
+          for (let i = 0; i < nodeData.length; i++) {
+            const { node, placeholders, numberPlaceholders, colorMap } = nodeData[i];
+            const translatedText = result.translations[i];
 
             try {
+              // Capture original dimensions BEFORE changing text, so we can detect overflow
+              const originalWidth = node.width;
+              const originalHeight = node.height;
+              const originalFontSize = node.fontSize;
+
               // Load font
               if (!node.fontName || typeof node.fontName === 'symbol' || !node.fontName.family || !node.fontName.style) {
                 await figma.loadFontAsync({ family: "Inter", style: "Regular" });
@@ -394,30 +686,31 @@ figma.ui.onmessage = async (msg) => {
                 await figma.loadFontAsync(node.fontName as FontName);
               }
 
-              // Restore placeholders
+              // Restore placeholders (numbers + excluded terms) — color markers are still in finalText
               let finalText = translatedText;
-              const { placeholders, numberPlaceholders } = replaceWithPlaceholders(node.characters, excludedTerms);
-
               Object.entries(numberPlaceholders).forEach(([placeholder, value]) => {
                 finalText = finalText.replace(placeholder, value);
               });
-
               Object.entries(placeholders).forEach(([placeholder, value]) => {
                 finalText = finalText.replace(placeholder, value);
               });
 
-              node.characters = finalText;
+              // Apply text + color ranges
+              applyTranslatedTextWithColors(node, finalText, colorMap);
+              await fitTextToBox(node, originalWidth, originalHeight, originalFontSize);
             } catch (error: any) {
-              console.error(`Error updating text node:`, error);
-              return { success: false, lang: targetLang };
+              const reason = `font/text update failed on node "${node.name}": ${error?.message || String(error)}`;
+              console.error(`[${targetLang}] ${reason}`, error);
+              return { success: false, lang: targetLang, reason };
             }
           }
         }
 
         return { success: true, lang: targetLang };
       } catch (error: any) {
-        console.error(`Error translating to ${targetLang}:`, error);
-        return { success: false, lang: targetLang };
+        const reason = `unexpected error: ${error?.message || String(error)}`;
+        console.error(`[${targetLang}] ${reason}`, error);
+        return { success: false, lang: targetLang, reason };
       }
     }
 
@@ -425,17 +718,19 @@ figma.ui.onmessage = async (msg) => {
     for (let frameIndex = 0; frameIndex < selectedFrames.length; frameIndex++) {
       const frame = selectedFrames[frameIndex];
 
-      // Process all languages in parallel for this frame
-      const languagePromises = targetLangs.map((targetLang: string, langIndex: number) =>
-        processLanguage(frame, targetLang, langIndex)
+      // Process languages with bounded concurrency to stay under OpenAI's TPM limit.
+      // 5 in flight at once works for Tier 1 (200k TPM) with ~2k tokens/request.
+      const LANGUAGE_CONCURRENCY = 5;
+      const results = await asyncPool(
+        LANGUAGE_CONCURRENCY,
+        targetLangs as string[],
+        (targetLang: string, langIndex: number) => processLanguage(frame, targetLang, langIndex)
       );
-
-      const results = await Promise.all(languagePromises);
 
       // Collect failed languages
       results.forEach(result => {
-        if (!result.success && !failedLanguages.includes(result.lang)) {
-          failedLanguages.push(result.lang);
+        if (!result.success && !failedLanguages.some(f => f.lang === result.lang)) {
+          failedLanguages.push({ lang: result.lang, reason: result.reason || 'unknown' });
           hasErrors = true;
         }
       });
@@ -443,7 +738,10 @@ figma.ui.onmessage = async (msg) => {
 
     // Notify completion with failed languages if any
     if (failedLanguages.length > 0) {
-      figma.notify(`Translation completed with errors. Failed languages: ${failedLanguages.join(', ')}`, { error: true });
+      console.error('=== TRANSLATION FAILURES SUMMARY ===');
+      failedLanguages.forEach(f => console.error(`  ${f.lang}: ${f.reason}`));
+      const langList = failedLanguages.map(f => f.lang).join(', ');
+      figma.notify(`Translation failed for: ${langList}. Check console for details.`, { error: true, timeout: 6000 });
     } else {
       figma.notify('Translation completed successfully');
     }
@@ -452,5 +750,12 @@ figma.ui.onmessage = async (msg) => {
     excludedTerms = msg.terms;
   } else if (msg.type === 'setApiKey') {
     OPENAI_API_KEY = msg.apiKey;
+  } else if (msg.type === 'getContext') {
+    const stored = await figma.clientStorage.getAsync('translationContext');
+    translationContext = (typeof stored === 'string') ? stored : '';
+    figma.ui.postMessage({ type: 'loadContext', context: translationContext });
+  } else if (msg.type === 'setContext') {
+    translationContext = typeof msg.context === 'string' ? msg.context : '';
+    await figma.clientStorage.setAsync('translationContext', translationContext);
   }
 };
